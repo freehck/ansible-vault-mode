@@ -538,7 +538,7 @@ Ensures deletion of ansible-vault generated password files."
 
 ;;;###autoload
 (define-minor-mode ansible-vault-mode
-  "Minor mode for manipulating ansible-vault files"
+  "Minor mode for manipulating ansible-vault files."
   :lighter " ansible-vault"
   :keymap ansible-vault-mode-map
   :group 'ansible-vault
