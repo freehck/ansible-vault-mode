@@ -221,7 +221,7 @@ commandline flag for it."
   (let ((config-file
          (seq-find (lambda (file) (and file (file-readable-p file) file))
                    (list (getenv "ANSIBLE_CONFIG")
-                         "ansible.cfg"
+                         (expand-file-name "ansible.cfg" (locate-dominating-file (buffer-file-name) "ansible.cfg"))
                          "~/.ansible.cfg"
                          "/etc/ansible/ansible.cfg"))))
     (unless (= (length config-file) 0)
