@@ -5,7 +5,7 @@
 ;; Authors: Zachary Elliott <contact@zell.io>, Dmitrii Kashin <freehck@yandex.ru>
 ;; Maintainer: Dmitrii Kashin <freehck@yandex.ru>
 ;; URL: http://github.com/freehck/ansible-vault-mode;; Created: 2016-09-25
-;; Version: 0.5.2
+;; Version: 0.5.3
 ;; Keywords: ansible, ansible-vault, tools
 ;; Package-Requires: ((emacs "25.1"))
 
@@ -35,7 +35,7 @@
 
 (eval-when-compile (require 'subr-x))
 
-(defconst ansible-vault-version "0.5.2"
+(defconst ansible-vault-version "0.5.3"
   "`ansible-vault' version.")
 
 (defgroup ansible-vault nil
