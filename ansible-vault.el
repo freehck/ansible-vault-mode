@@ -2,19 +2,17 @@
 
 ;; Copyright (C) 2016-2021 Zachary Elliott
 ;;
-;; Authors: Zachary Elliott <contact@zell.io>
-;; Maintainer: Zachary Elliott <contact@zell.io>
-;; URL: http://github.com/zellio/ansible-vault-mode
-;; Created: 2016-09-25
+;; Authors: Zachary Elliott <contact@zell.io>, Dmitrii Kashin <freehck@yandex.ru>
+;; Maintainer: Dmitrii Kashin <freehck@yandex.ru>
+;; URL: http://github.com/freehck/ansible-vault-mode;; Created: 2016-09-25
 ;; Version: 0.5.2
 ;; Keywords: ansible, ansible-vault, tools
-;; Package-Requires: ((emacs "24.3"))
+;; Package-Requires: ((emacs "25.1"))
 
 ;; This file is not part of GNU Emacs.
 
 ;;; Commentary:
-
-;;
+;; No comments
 
 ;;; License:
 
@@ -111,7 +109,7 @@ generation.")
 (defvar ansible-vault--header-version '()
   "Buffer local variable for `ansible-vault-mode'.")
 
-(defvar ansuble-vault--header-cipher-algorithm '()
+(defvar ansible-vault--header-cipher-algorithm '()
   "Buffer local variable for `ansible-vault-mode'.")
 
 (defvar ansible-vault--header-vault-id '()
@@ -153,7 +151,7 @@ save hooks to treat ansible-vault file as encrypted on disk.")
         (setq-local
          ansible-vault--header-format-id format-id
          ansible-vault--header-version version
-         ansuble-vault--header-cipher-algorithm cipher-algorithm
+         ansible-vault--header-cipher-algorithm cipher-algorithm
          ansible-vault--header-vault-id vault-id)))))
 
 ;;;###autoload
@@ -528,7 +526,7 @@ Ensures deletion of ansible-vault generated password files."
   "Unset all buffer local variables."
   (dolist (var '(ansible-vault--header-format-id
                  ansible-vault--header-version
-                 ansuble-vault--header-cipher-algorithm
+                 ansible-vault--header-cipher-algorithm
                  ansible-vault--header-vault-id
                  ansible-vault--point
                  ansible-vault--password-file
