@@ -7,9 +7,9 @@
 ;; Maintainer: Dmitrii Kashin <freehck@yandex.ru>
 ;; URL: http://github.com/freehck/ansible-vault-mode
 ;; Created: 2016-09-25
-;; Version: 0.6.0
+;; Version: 0.7.0
 ;; Keywords: ansible, ansible-vault, tools
-;; Package-Requires: ((emacs "26.1") (auto-minor-mode "20180527.1"))
+;; Package-Requires: ((emacs "26.1") (auto-minor-mode "20180527.1") (a "1.0")
 
 ;; This file is not part of GNU Emacs.
 
@@ -38,13 +38,14 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'map)
-(require 'auto-minor-mode)
+(require 'auto-minor-mode) ;; to enable the mode automatically when open encrypted file
+(require 'a) ;; interfaces to work with the internal state
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Configuration
 ;; ──────────────────────────────────────────────────────────────
 
-(defconst ansible-vault-version "0.6.1"
+(defconst ansible-vault-version "0.7.0"
   "`ansible-vault' version.")
 
 (defgroup ansible-vault nil
@@ -112,6 +113,29 @@ generation.")
 ;; ──────────────────────────────────────────────────────────────
 ;; Internal state
 ;; ──────────────────────────────────────────────────────────────
+
+(defvar ansible-vault--state
+  (a-list :header (a-list :version nil
+                          :cipher-algorithm nil
+                          :vault-id nil)
+          :point 0
+          :password-file nil
+          :vault-id nil))
+(make-variable-buffer-local 'ansible-vault--state)
+(put 'ansible-vault--state 'permanent-local t)
+
+(defun ansible-vault--get-state (&rest keys)
+  (a-get-in ansible-vault--state keys))
+
+(defun ansible-vault--set-state (&rest keys-and-newval)
+  (let ((keys (butlast keys-and-newval))
+        (newval (car (reverse keys-and-newval))))
+    (setq-local ansible-vault--state
+                (a-assoc-in ansible-vault--state keys newval))))
+
+;;;; examples
+;; (ansible-vault--get-state :header :version)
+;; (ansible-vault--set-state :header :version "1.2")
 
 ;; Important: I made all the buffer-local variables to be permanent
 ;; as we don't wanna miss them when major mode changed
