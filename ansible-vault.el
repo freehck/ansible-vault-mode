@@ -9,7 +9,7 @@
 ;; Created: 2016-09-25
 ;; Version: 0.6.0
 ;; Keywords: ansible, ansible-vault, tools
-;; Package-Requires: ((emacs "26.1"))
+;; Package-Requires: ((emacs "26.1") (auto-minor-mode "20180527.1"))
 
 ;; This file is not part of GNU Emacs.
 
@@ -36,10 +36,9 @@
 ;;; Code:
 
 (require 'cl-lib)
-;;;###autoload
-(require 'subr-x nil t)
-;;;###autoload
-(require 'map nil t)
+(require 'subr-x)
+(require 'map)
+(require 'auto-minor-mode)
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Configuration
@@ -404,50 +403,62 @@ START defaults to `point-min'.
 END defaults to `point-max'.
 BUFFER defaults to current buffer.
 ERROR-BUFFER defaults to `ansible-vault--error-buffer'."
-  (let* (;; Silence messages
-         (inhibit-message t)
-         (message-log-max nil)
-
-         ;; Set default arguments
-         (start (or start (point-min)))
-         (end (or end (point-max)))
-         (error-buffer (or error-buffer (ansible-vault--error-buffer)))
-
-         ;; Local variables
-         (ansible-vault-stdout (get-buffer-create "*ansible-vault-stdout*"))
-         (ansible-vault-stderr (get-buffer-create "*ansible-vault-stderr*")))
-    (ansible-vault--guess-password-file)
-    (unwind-protect
-        (progn
-          (let ((shell-command (ansible-vault--shell-command command)))
-            (let ((env-ansible-vault-password-file (getenv "ANSIBLE_VAULT_PASSWORD_FILE")))
-              (unwind-protect
+  (message "execute 1")
+  (message "execute 1.1")
+  (save-excursion
+    (widen) ;; if we're in narrowed buffer, point-max will be less than 1+ buffer-size
+    (let* (;; Silence messages
+           (inhibit-message nil)
+           (message-log-max 1000)
+           (_ (message "x1"))
+           ;; Set default arguments
+           (start (or start (point-min)))
+           (_ (message "x2"))
+           (end (or end (point-max)))
+           (_ (message "x3"))
+           (error-buffer (or error-buffer (ansible-vault--error-buffer)))
+           (_ (message "x4"))
+  
+           ;; Local variables
+           (ansible-vault-stdout (get-buffer-create "*ansible-vault-stdout*"))
+           (ansible-vault-stderr (get-buffer-create "*ansible-vault-stderr*")))
+      (message "execute 2")
+      (ansible-vault--guess-password-file)
+      (message "execute 3")
+      (unwind-protect
+          (progn
+            (let ((shell-command (ansible-vault--shell-command command)))
+              (let ((env-ansible-vault-password-file (getenv "ANSIBLE_VAULT_PASSWORD_FILE")))
+                (unwind-protect
+                    (progn
+                      (setenv "ANSIBLE_VAULT_PASSWORD_FILE" nil)
+                      (message (format "start %d end %d" start end))
+                      (message (format "bufsize %d" (buffer-size)))
+                      (shell-command-on-region start end shell-command
+                                               ansible-vault-stdout nil
+                                               ansible-vault-stderr nil))
+                  (setenv "ANSIBLE_VAULT_PASSWORD_FILE" env-ansible-vault-password-file)))
+              (if (zerop (buffer-size ansible-vault-stderr))
                   (progn
-                    (setenv "ANSIBLE_VAULT_PASSWORD_FILE" nil)
-                    (shell-command-on-region start end shell-command
-                                             ansible-vault-stdout nil
-                                             ansible-vault-stderr nil))
-                (setenv "ANSIBLE_VAULT_PASSWORD_FILE" env-ansible-vault-password-file)))
-            (if (zerop (buffer-size ansible-vault-stderr))
-                (progn
-                  (delete-region start end)
-                  (insert-buffer-substring ansible-vault-stdout))
-              (let ((inhibit-read-only t))
-                (switch-to-buffer error-buffer)
-                (goto-char (point-max))
-                (insert "$ " shell-command "\n")
-                (insert-buffer-substring ansible-vault-stderr)
-                (insert "\n")
-                (ansible-vault--cleanup-password-error)))
-            ))
-      (kill-buffer ansible-vault-stdout)
-      (kill-buffer ansible-vault-stderr))
-    ))
+                    (delete-region start end)
+                    (insert-buffer-substring ansible-vault-stdout))
+                (let ((inhibit-read-only t))
+                  (switch-to-buffer error-buffer)
+                  (goto-char (point-max))
+                  (insert "$ " shell-command "\n")
+                  (insert-buffer-substring ansible-vault-stderr)
+                  (insert "\n")
+                  (ansible-vault--cleanup-password-error)))
+              ))
+        (kill-buffer ansible-vault-stdout)
+        (kill-buffer ansible-vault-stderr))
+      )))
 
 ;; interactive actions
 (defun ansible-vault-decrypt-current-buffer ()
   "In place decryption of `current-buffer' using `ansible-vault'."
   (interactive)
+  (message "decrypt 1")
   (ansible-vault--execute-on-region "decrypt"))
 
 (defun ansible-vault-decrypt-current-file ()
@@ -583,23 +594,29 @@ Ensures deletion of ansible-vault generated password files."
   (if ansible-vault-mode
       ;; Enable the mode
       (progn
+        (message "enable")
+
         ;; Disable backups
         (setq-local
          backup-inhibited t)
-
+        (message "enable 1")
         ;; Disable auto-save
         (when auto-save-default
           (auto-save-mode -1))
-
+        (message "enable 2")
         ;; Decrypt the current buffer first if it needs to be
         (when (ansible-vault--is-encrypted-vault-file)
-          (setq-local
-           ansible-vault--auto-encryption-enabled t)
+          (message "enable 3")
+          (setq-local ansible-vault--auto-encryption-enabled t)
+          (message "enable 4")
           (ansible-vault--fingerprint-buffer)
+          (message "enable 5")
           (ansible-vault-decrypt-current-buffer)
+          (message "enable 6")
           (set-buffer-modified-p nil))
-
+        
         ;; Add mode hooks
+        (message "enable 7")
         (add-hook 'before-save-hook 'ansible-vault--before-save-hook t t)
         (add-hook 'after-save-hook 'ansible-vault--after-save-hook t t)
         (add-hook 'kill-buffer-hook 'ansible-vault--kill-buffer-hook t t)
@@ -609,10 +626,13 @@ Ensures deletion of ansible-vault generated password files."
         (put 'after-save-hook 'permanent-local t)
         (put 'kill-buffer-hook 'permanent-local t)
 
+        (message "enable 8")
         ;; change major mode
-        (normal-mode)
+        ;(normal-mode)
         )
 
+    (message "disable")
+    
     ;; Disable the mode
     (remove-hook 'after-save-hook 'ansible-vault--after-save-hook t)
     (remove-hook 'before-save-hook 'ansible-vault--before-save-hook t)
@@ -623,6 +643,11 @@ Ensures deletion of ansible-vault generated password files."
     (if (and (buffer-modified-p) (not (ansible-vault--is-encrypted-vault-file)))
         (ansible-vault-encrypt-current-buffer)
       (revert-buffer nil t nil))
+    ;; revert-buffer calls normal-mode
+    ;; normal-mode calls set-auto-mode
+    ;; set-auto-mode looks into magic-mode-alist
+    ;; and I have added ansible-vault-mode to magic-mode-alist!!!
+    ;; so it will be enabled here back
 
     ;; Clean up password state
     (ansible-vault--flush-password-file)
@@ -635,11 +660,15 @@ Ensures deletion of ansible-vault generated password files."
 
     (ansible-vault--clear-local-variables)))
 
+;; make the mode undescructable
+
+(put 'ansible-vault-mode 'permanent-local t)
+
 ;; ──────────────────────────────────────────────────────────────
 ;; Integrations
 ;; ──────────────────────────────────────────────────────────────
 
-(add-to-list 'magic-mode-alist
+(add-to-list 'auto-minor-mode-magic-alist
              (cons #'ansible-vault--is-encrypted-vault-file #'ansible-vault-mode))
 
 ;; ──────────────────────────────────────────────────────────────
