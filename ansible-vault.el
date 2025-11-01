@@ -286,9 +286,21 @@ If HEADER is \"$ANSIBLE_VAULT;1.2;AES256;prod\" it will return
                                  do (cpush "--vault-id")
                                  do (cpush vault-id)))))
          (ver   (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
+      (:encrypt
+       (cpush "encrypt")
+       (cpush "--output=-")
+       (pcase (crypto-options :vault-encrypt-identity)
+         (`nil (pcase (crypto-options :vault-password-file)
+                 (`nil (error "Unknown vault-password-file"))
+                 (val  (cpush "--vault-password-file")
+                       (cpush val))))
+         (val  (cpush "--encrypt-vault-id")
+               (cpush val)
+               (cl-loop for vault-id in (split-string str ", ")
+                        do (cpush "--vault-id")
+                        do (cpush vault-id)))))
       (_ (error (format "Unknown action: %s" action))))
-    (mapconcat #'identity (reverse command) " ")
-    )))
+    (mapconcat #'identity (reverse command) " "))))
 
 (defun ansible-vault--get-or-create-error-buffer ()
   "Generate or return `ansible-vault' error report buffer."
@@ -338,10 +350,26 @@ If HEADER is \"$ANSIBLE_VAULT;1.2;AES256;prod\" it will return
       (kill-buffer cmd-buf-stderr)
       )))
 
+(defalias 'ansible-vault--run-decrypt
+  (apply-partially #'ansible-vault--run :decrypt)
+  "(ansible-vault--run-decrypt CRYPTO-OPTIONS HEADER-OPTIONS STR)
 
-      
-        
-            
+Run decrypt.")
+
+(defalias 'ansible-vault--run-encrypt
+  (apply-partially #'ansible-vault--run :encrypt)
+  "Run encrypt.")
+
+
+;; ──────────────────────────────────────────────────────────────
+;; interactive functions
+;; ──────────────────────────────────────────────────────────────
+
+(defun ansible-vault-decrypt-current-buffer ()
+  "In place decryption of `current-buffer' using `ansible-vault'."
+  (interactive)
+  (ansible-vault--execute-on-region "decrypt"))
+
               
            
 
@@ -358,254 +386,80 @@ If HEADER is \"$ANSIBLE_VAULT;1.2;AES256;prod\" it will return
 
 
 
-;;
-;;
-;;;; shell command generation
-;;
-;;(defun ansible-vault--sub-command-type (sub-command)
-;;  "Identify type of ansible-vault subcommand for cli tool flags generation.
-;;
-;;SUB-COMMAND ansible-vault cli sub-command to type."
-;;  (cdr (assoc sub-command ansible-vault--sub-command-type-alist)))
-;;
-;;(defun ansible-vault--command-flags (sub-command)
-;;  "Generate the command flags for calling `ansible-vault'.
-;;
-;;SUB-COMMAND the sub-command of ansible vault as a string.  Valid
-;;values can be found in `ansible-vault--sub-command-type-alist'."
-;;  (let* ((type (ansible-vault--sub-command-type sub-command))
-;;         (v1.2-p (or (string= ansible-vault--header-version "1.2")
-;;                     ansible-vault--header-vault-id
-;;                     ansible-vault--vault-id)))
-;;    (append
-;;     '("--output=-")
-;;     (if v1.2-p
-;;         (let* ((vault-id-pair (assoc ansible-vault--vault-id ansible-vault-vault-id-alist))
-;;                (vault-id-str (concat (car vault-id-pair) "@" (cdr vault-id-pair))))
-;;           (list
-;;            (format "--vault-id=%S" vault-id-str)
-;;            (when (eq type :encrypt) (format "--encrypt-vault-id=%S" ansible-vault--vault-id))))
-;;       (list (format "--vault-password-file=%S" ansible-vault--password-file))))
-;;    ))
-;;
-;;(defun ansible-vault--shell-command (sub-command)
-;;  "Generate Ansible Vault shell call for SUB-COMMAND.
-;;
-;;The command \"ansible-vault\" flags are generated via the
-;;`ansible-vault--command-flags' function.  The flag values are
-;;dictated by the buffer local variables.
-;;
-;;SUB-COMMAND is the \"ansible-vault\" subcommand to use."
-;;  (let* ((command-flags (ansible-vault--command-flags sub-command)))
-;;    (format "%s %s %s" ansible-vault-command sub-command
-;;            (mapconcat 'identity command-flags " "))))
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;;; setting local variables and creating necessary files
-;;
-;;(defun ansible-vault--create-password-file (password)
-;;  "Generate a temporary file to store PASSWORD.
-;;
-;;The generated file is located in TMPDIR, and is marked read-only
-;;for owner."
-;;  (let* ((temp-file (make-temp-file "ansible-vault-secret-")))
-;;    (set-file-modes temp-file #o0600)
-;;    (append-to-file password nil temp-file)
-;;    (set-file-modes temp-file #o0400)
-;;    (setq-local ansible-vault--password-file temp-file)
-;;    (push ansible-vault--password-file ansible-vault--password-file-list)
-;;    temp-file))
-;;
-;;(defun ansible-vault--request-password (password)
-;;  "Prompt user a for the password for the current buffer.
-;;
-;;PASSWORD ansible-vault password to be stored."
-;;  (interactive
-;;   (list (read-passwd "Vault Password: ")))
-;;  (ansible-vault--create-password-file password))
-;;
-;;(defun ansible-vault--request-vault-id (vault-id &optional password-file)
-;;  "Prompt user for a vault-id for the current buffer.
-;;
-;;If the vault-id doesn't have an associated password file, request
-;;a password from the user as well.
-;;
-;;VAULT-ID ansible-vault vault id.
-;;PASSWORD-FILE path to the stored secret for provided VAULT-ID."
-;;  (interactive "Vault Id: ")
-;;  (let* ((vault-id-pair
-;;          (or (assoc vault-id ansible-vault-vault-id-alist)
-;;              (let* ((password-file (or password-file
-;;                                        (call-interactively 'ansible-vault--request-password))))
-;;                (car (push (cons vault-id password-file) ansible-vault-vault-id-alist)))))
-;;         (password-file (or password-file (cdr vault-id-pair))))
-;;    (setq-local ansible-vault--vault-id vault-id)
-;;    (setq-local ansible-vault--password-file password-file)
-;;    vault-id-pair))
-;;
-;;;; side-effect: it sets ansible-vault--password-file
-;;(defun ansible-vault--guess-password-file ()
-;;  "Attempts to determine the correct ansible-vault password file.
-;;
-;;Ansible vault has several locations to store the configuration of
-;;its password file."
-;;  (interactive)
-;;  (when (not ansible-vault--password-file)
-;;    (let* ((env-val (or (getenv "ANSIBLE_VAULT_PASSWORD_FILE") ""))
-;;           (vault-id-pair (assoc ansible-vault--header-vault-id ansible-vault-vault-id-alist))
-;;           (ansible-config-path (ansible-vault--process-config-files)))
-;;      (cond
-;;       (vault-id-pair
-;;        (setq-local ansible-vault--vault-id (car vault-id-pair))
-;;        (setq-local ansible-vault--password-file (cdr vault-id-pair)))
-;;       (ansible-vault--header-vault-id
-;;        (ansible-vault--request-vault-id ansible-vault--header-vault-id))
-;;       (t (let* ((password-file
-;;                  (or (and (not (string-empty-p env-val)) env-val)
-;;                      ansible-config-path
-;;                      ansible-vault-password-file)))
-;;            (setq-local
-;;             ansible-vault--password-file password-file))))
-;;      ))
-;;  (when (not (and ansible-vault--password-file (file-readable-p ansible-vault--password-file)))
-;;    (let* ((vault-id (or ansible-vault--header-vault-id ansible-vault--vault-id)))
-;;      (cond (vault-id (ansible-vault--request-vault-id vault-id))
-;;            (t (call-interactively 'ansible-vault--request-password)))
-;;      ))
-;;  ansible-vault--password-file)
-;;
-;;;; unsetting variables and deleting unnecessary files
-;;
-;;(defun ansible-vault--flush-password-file ()
-;;  "Delete password file and associated buffer local variables."
-;;  (when ansible-vault--password-file
-;;    (when (member ansible-vault--password-file ansible-vault--password-file-list)
-;;      (setq ansible-vault--password-file-list
-;;            (remove ansible-vault--password-file ansible-vault--password-file-list))
-;;      (delete-file ansible-vault--password-file))
-;;    (setq-local ansible-vault--password-file nil)))
-;;
-;;(defun ansible-vault--flush-vault-id ()
-;;  "Delete vault-id pair and associated buffer local variables."
-;;  (when ansible-vault--vault-id
-;;    (when (map-contains-key ansible-vault-vault-id-alist ansible-vault--vault-id)
-;;      (setq ansible-vault-vault-id-alist
-;;            (map-filter (lambda (key _)
-;;                          (not (string= key ansible-vault--vault-id)))
-;;                        ansible-vault-vault-id-alist)))
-;;    (setq-local ansible-vault--vault-id nil)
-;;    (ansible-vault--flush-password-file)))
-;;
-;;(defun ansible-vault--cleanup-password-error ()
-;;  "Flush both vault and password values."
-;;  (when ansible-vault--vault-id
-;;    (ansible-vault--flush-vault-id))
-;;  (when ansible-vault--password-file
-;;    (ansible-vault--flush-password-file)))
-;;
-;;(defun ansible-vault--clear-local-variables ()
-;;  "Unset all buffer local variables."
-;;  (dolist (var '(ansible-vault--header-version
-;;                 ansible-vault--header-cipher-algorithm
-;;                 ansible-vault--header-vault-id
-;;                 ansible-vault--point
-;;                 ansible-vault--password-file
-;;                 ansible-vault--vault-id
-;;                 ansible-vault--auto-encryption-enabled))
-;;    (makunbound var)))
-;;
-;;;; error handling
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;
-;;;; run ansible-vault cli tool
-;;
-;;(defun ansible-vault--execute-on-region (command &optional start end buffer error-buffer)
-;;  "In place execution of a given COMMAND using `ansible-vault'.
-;;
-;;START defaults to `point-min'.
-;;END defaults to `point-max'.
-;;BUFFER defaults to current buffer.
-;;ERROR-BUFFER defaults to `ansible-vault--error-buffer'."
-;;  (message "execute 1")
-;;  (message "execute 1.1")
-;;  (save-excursion
-;;    (widen) ;; if we're in narrowed buffer, point-max will be less than 1+ buffer-size
-;;    (let* (;; Silence messages
-;;           (inhibit-message nil)
-;;           (message-log-max 1000)
-;;           (_ (message "x1"))
-;;           ;; Set default arguments
-;;           (start (or start (point-min)))
-;;           (_ (message "x2"))
-;;           (end (or end (point-max)))
-;;           (_ (message "x3"))
-;;           (error-buffer (or error-buffer (ansible-vault--error-buffer)))
-;;           (_ (message "x4"))
-;;  
-;;           ;; Local variables
-;;           (ansible-vault-stdout (get-buffer-create "*ansible-vault-stdout*"))
-;;           (ansible-vault-stderr (get-buffer-create "*ansible-vault-stderr*")))
-;;      (message "execute 2")
-;;      (ansible-vault--guess-password-file)
-;;      (message "execute 3")
-;;      (unwind-protect
-;;          (progn
-;;            (let ((shell-command (ansible-vault--shell-command command)))
-;;              (let ((env-ansible-vault-password-file (getenv "ANSIBLE_VAULT_PASSWORD_FILE")))
-;;                (unwind-protect
-;;                    (progn
-;;                      (setenv "ANSIBLE_VAULT_PASSWORD_FILE" nil)
-;;                      (message (format "start %d end %d" start end))
-;;                      (message (format "bufsize %d" (buffer-size)))
-;;                      (shell-command-on-region start end shell-command
-;;                                               ansible-vault-stdout nil
-;;                                               ansible-vault-stderr nil))
-;;                  (setenv "ANSIBLE_VAULT_PASSWORD_FILE" env-ansible-vault-password-file)))
-;;              (if (zerop (buffer-size ansible-vault-stderr))
-;;                  (progn
-;;                    (delete-region start end)
-;;                    (insert-buffer-substring ansible-vault-stdout))
-;;                (let ((inhibit-read-only t))
-;;                  (switch-to-buffer error-buffer)
-;;                  (goto-char (point-max))
-;;                  (insert "$ " shell-command "\n")
-;;                  (insert-buffer-substring ansible-vault-stderr)
-;;                  (insert "\n")
-;;                  (ansible-vault--cleanup-password-error)))
-;;              ))
-;;        (kill-buffer ansible-vault-stdout)
-;;        (kill-buffer ansible-vault-stderr))
-;;      )))
-;;
+
+
+
+
+
+
+
+
+
+
+
+;; setting local variables and creating necessary files
+
+(defun ansible-vault--create-password-file (password)
+  "Generate a temporary file to store PASSWORD.
+
+The generated file is located in TMPDIR, and is marked read-only
+for owner."
+  (let* ((temp-file (make-temp-file "ansible-vault-secret-")))
+    (set-file-modes temp-file #o0600)
+    (append-to-file password nil temp-file)
+    (set-file-modes temp-file #o0400)
+    (setq-local ansible-vault--password-file temp-file)
+    (push ansible-vault--password-file ansible-vault--password-file-list)
+    temp-file))
+
+(defun ansible-vault--request-password (password)
+  "Prompt user a for the password for the current buffer.
+
+PASSWORD ansible-vault password to be stored."
+  (interactive
+   (list (read-passwd "Vault Password: ")))
+  (ansible-vault--create-password-file password))
+
+(defun ansible-vault--request-vault-id (vault-id &optional password-file)
+  "Prompt user for a vault-id for the current buffer.
+
+If the vault-id doesn't have an associated password file, request
+a password from the user as well.
+
+VAULT-ID ansible-vault vault id.
+PASSWORD-FILE path to the stored secret for provided VAULT-ID."
+  (interactive "Vault Id: ")
+  (let* ((vault-id-pair
+          (or (assoc vault-id ansible-vault-vault-id-alist)
+              (let* ((password-file (or password-file
+                                        (call-interactively 'ansible-vault--request-password))))
+                (car (push (cons vault-id password-file) ansible-vault-vault-id-alist)))))
+         (password-file (or password-file (cdr vault-id-pair))))
+    (setq-local ansible-vault--vault-id vault-id)
+    (setq-local ansible-vault--password-file password-file)
+    vault-id-pair))
+
+
+;; unsetting variables and deleting unnecessary files
+
+;; error handling
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ;;;; interactive actions
-;;(defun ansible-vault-decrypt-current-buffer ()
-;;  "In place decryption of `current-buffer' using `ansible-vault'."
-;;  (interactive)
-;;  (message "decrypt 1")
-;;  (ansible-vault--execute-on-region "decrypt"))
 ;;
 ;;(defun ansible-vault-decrypt-current-file ()
 ;;  "Decrypts the current buffer and writes the file."
@@ -844,4 +698,4 @@ If HEADER is \"$ANSIBLE_VAULT;1.2;AES256;prod\" it will return
 ;;(provide 'ansible-vault)
 ;;
 ;;;;; ansible-vault.el ends here
-;;
+
