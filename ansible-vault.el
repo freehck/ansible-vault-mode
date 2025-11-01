@@ -42,30 +42,30 @@
 ;; ansible-vault variables
 ;; https://docs.ansible.com/ansible/latest/reference_appendices/config.html
 
-;; DEFAULT_VAULT_PASSWORD_FILE
+;; DEFAULT_VAULT_PASSWORD_FILE ANSIBLE_VAULT_PASSWORD_FILE
 ;; [defaults] vault_password_file None
 ;; 
 ;; The vault password file to use. Equivalent to --vault-password-file or --vault-id. If executable,
 ;; it will be run and the resulting stdout will be used as the password.
 
-;; DEFAULT_VAULT_IDENTITY_LIST
+;; DEFAULT_VAULT_IDENTITY_LIST ANSIBLE_VAULT_IDENTITY_LIST
 ;; [defaults] vault_identity_list []
 ;; 
 ;; A list of vault-ids to use by default. Equivalent to multiple --vault-id args. Vault-ids are
 ;; tried in order.
 
-;; DEFAULT_VAULT_IDENTITY
+;; DEFAULT_VAULT_IDENTITY ANSIBLE_VAULT_IDENTITY
 ;; [defaults] vault_identity default
 ;; 
 ;; The label to use for the default vault id label in cases where a vault id label is not provided.
 
-;; DEFAULT_VAULT_ENCRYPT_IDENTITY
+;; DEFAULT_VAULT_ENCRYPT_IDENTITY ANSIBLE_VAULT_ENCRYPT_IDENTITY
 ;; [defaults] vault_encrypt_identity
 ;; 
 ;; The vault_id to use for encrypting by default. If multiple vault_ids are provided, this specifies
 ;; which to use for encryption. The --encrypt-vault-id CLI option overrides the configured value.
 
-;; DEFAULT_VAULT_ID_MATCH
+;; DEFAULT_VAULT_ID_MATCH ANSIBLE_VAULT_ID_MATCH
 ;; [defaults] vault_id_match false
 ;; 
 ;; If true, decrypting vaults with a vault id will only try the password from the matching vault-id.
@@ -161,6 +161,69 @@ the 1.2 vault-id syntax."
 (defvar ansible-vault--state '())
 (make-variable-buffer-local 'ansible-vault--state)
 (put 'ansible-vault--state 'permanent-local t)
+
+;; ──────────────────────────────────────────────────────────────
+;; Data Structures
+;; ──────────────────────────────────────────────────────────────
+
+;; do I really need it?
+(defconst ansible-vault--header-options-keys
+  '(:version :cipher-algorithm :vault-id)
+  "Keys available in header-options a-list structure.")
+
+(defun ansible-vault--header-options-p (obj)
+  "Checks if OBJ is a valid header-options (a-list)."
+  (and (a-associative-p obj)
+       (a-get obj :version)
+       (a-get obj :cipher-algorithm)
+       (pcase (a-get obj :version)
+         ("1.1" t)
+         ("1.2" (a-get obj :vault-id))
+         (_     nil))
+       t))
+
+;; (let ((obj (a-list :version "1.1"
+;;                    :cipher-algorithm "AES256"
+;;                    ;:vault-id "dev"
+;;                    )))
+;;   (ansible-vault--header-options-p obj))
+
+(defconst ansible-vault--crypto-options-keys
+  '(:vault-password-file :vault-identity-list :vault-identity :vault-encrypt-identity :vault-id-match)
+  "Keys available in crypto-options a-list structure.")
+
+(defun ansible-vault--crypto-options-p (obj)
+  (and (a-associative-p obj)
+       (and (or (a-get obj :vault-password-file)
+                (a-get obj :vault-identity-list))
+            t)))
+
+(defun ansible-vault--crypto-options--can-decrypt-1.1-p (obj)
+  (and (a-associative-p obj)
+       (a-get obj :vault-password-file)
+       t))
+
+(defun ansible-vault--crypto-options--can-encrypt-1.1-p (obj)
+  (and (a-associative-p obj)
+       (a-get obj :vault-password-file)
+       t))
+
+(defun ansible-vault--crypto-options--can-decrypt-1.2-p (obj)
+  (and (a-associative-p obj)
+       (a-get obj :vault-identity-list)
+       t))
+
+(defun ansible-vault--crypto-options--can-decrypt-1.2-p (obj)
+  (and (a-associative-p obj)
+       (a-get obj :vault-identity-list)
+       (a-get-obj :vault-encrypt-identity)
+       t))
+
+;;(a-list :vault-password-file ".vault-pass"
+;;        :vault-identity-list "dev@.vault-id-pass-dev, prod@.vault-id-pass-prod"
+;;        :vault-identity "dev"
+;;        :vault-encrypt-identity "dev"
+;;        :vault-id-match "true")
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Core
@@ -268,8 +331,8 @@ If HEADER is \"$ANSIBLE_VAULT;1.2;AES256;prod\" it will return
 
 (defun ansible-vault--generate-shell-command (action crypto-options header-options)
   (let ((command (list ansible-vault-command)))
-    (cl-labels ((header-options (&rest keys) (a-get-in header-options keys))
-                (crypto-options (&rest keys) (a-get-in crypto-options keys))
+    (cl-labels ((header-options (key) (a-get header-options key))
+                (crypto-options (key) (a-get crypto-options key))
                 (cpush (elt) (push elt command)))
     (pcase action
       (:decrypt
@@ -358,7 +421,9 @@ Run decrypt.")
 
 (defalias 'ansible-vault--run-encrypt
   (apply-partially #'ansible-vault--run :encrypt)
-  "Run encrypt.")
+  "(ansible-vault--run-decrypt CRYPTO-OPTIONS HEADER-OPTIONS STR
+
+Run encrypt.")
 
 
 ;; ──────────────────────────────────────────────────────────────
