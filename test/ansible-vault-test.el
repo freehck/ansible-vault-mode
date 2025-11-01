@@ -1,6 +1,41 @@
 (require 'ert)
 (load-file "../ansible-vault.el")
 
+
+(ert-deftest ansible-vault--header-options ()
+  (let ((v11  (a-list :version "1.1" :cipher-algorithm "AES256"))
+        (v12  (a-list :version "1.2" :cipher-algorithm "AES256" :vault-id "dev"))
+        (v13  (a-list :version "1.3" :cipher-algorithm "AES256"))
+        (nv12 (a-list :version "1.2" :cipher-algorithm "AES256")))
+    (should (equal (ansible-vault--header-options-p v11)   t))
+    (should (equal (ansible-vault--header-options-p v12)   t))
+    (should (equal (ansible-vault--header-options-p v13)   nil))
+    (should (equal (ansible-vault--header-options-p nv12)  nil))))
+
+(ert-deftest ansible-vault--crypto-options ()
+  (let* ((v1  (a-list :vault-password-file ".vault-pass"
+                      :vault-identity-list "dev@.vault-pass-dev, prod@.vault-pass-prod"))
+         (v2  (a-assoc v1 :vault-encrypt-identity "dev")))
+    (should (equal (ansible-vault--crypto-options-p v1) t))
+    (should (equal (ansible-vault--crypto-options--can-decrypt-1.1-p v1) t))
+    (should (equal (ansible-vault--crypto-options--can-encrypt-1.1-p v1) t))
+    (should (equal (ansible-vault--crypto-options--can-decrypt-1.2-p v1) t))
+    (should (equal (ansible-vault--crypto-options--can-encrypt-1.2-p v1) nil))
+    (should (equal (ansible-vault--crypto-options--can-encrypt-1.2-p v2) t))))
+
+(ert-deftest ansible-vault--crypto-options--validate ()
+  (let* ((obj (a-list :vault-password-file ".vault-pass"
+                      :vault-identity-list "dev@.vault-id-pass-dev, none@prompt, prod@.vault-id-pass-prod"
+                      :vault-identity "dev"
+                      :vault-encrypt-identity "dev"
+                      :vault-id-match "true"))
+         (obj (ansible-vault--crypto-options--validate obj)))
+    (should (equal (a-get obj :vault-identity-list) "dev@.vault-id-pass-dev, prod@.vault-id-pass-prod"))))
+
+(ert-deftest ansible-vault--vault-id-list ()
+  (let ((str "dev@.vault-pass-dev, prod@.vault-pass-prod, none@prompt"))
+    (should (equal (ansible-vault--vault-id-list--validate str) "dev@.vault-pass-dev, prod@.vault-pass-prod"))))
+
 (ert-deftest test-ansible-vault--state-functions ()
   (with-temp-buffer
     (setq-local ansible-vault--state '())

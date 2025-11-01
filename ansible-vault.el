@@ -141,7 +141,8 @@ the 1.2 vault-id syntax."
 ;; Internal variables
 ;; ──────────────────────────────────────────────────────────────
 
-(defvar ansible-vault--vault-header-regex
+;;(defvar ansible-vault--vault-header-regex
+(defvar ansible-vault--header-options-regex
   (rx line-start "$ANSIBLE_VAULT;"
       (group-n 1 "1." (any "12")) ";"
       (group-n 2 "AES" (optional "256"))
@@ -149,7 +150,8 @@ the 1.2 vault-id syntax."
       line-end)
   "Regex for `ansible-vault' header for identifying of encrypted buffers.")
 
-(defvar ansible-vault--vault-header-regex-groups-alist
+;;(defvar ansible-vault--vault-header-regex-groups-alist
+(defvar ansible-vault--header-options-regex-groups-alist
   (a-list :version 1
           :cipher-algorithm 2
           :vault-id 3))
@@ -166,7 +168,8 @@ the 1.2 vault-id syntax."
 ;; Data Structures
 ;; ──────────────────────────────────────────────────────────────
 
-;; do I really need it?
+;; header-options is an a-list structure with parameters from the first line of ansible-vault's encrypted message
+
 (defconst ansible-vault--header-options-keys
   '(:version :cipher-algorithm :vault-id)
   "Keys available in header-options a-list structure.")
@@ -182,11 +185,18 @@ the 1.2 vault-id syntax."
          (_     nil))
        t))
 
-;; (let ((obj (a-list :version "1.1"
-;;                    :cipher-algorithm "AES256"
-;;                    ;:vault-id "dev"
-;;                    )))
-;;   (ansible-vault--header-options-p obj))
+(defun ansible-vault--header-options--parse (header)
+  (unless (string-match ansible-vault--header-options-regex header)
+    (error (format "Not an ansible-vault header: %s" header)))
+  (cl-reduce
+   (pcase-lambda (acc `(,key . ,n))
+     (pcase (match-string n header)
+       ((and val (guard val))  (a-assoc-in acc (list key) val))
+       (_                      acc)))
+   ansible-vault--header-options-regex-groups-alist
+   :initial-value '()))
+
+;; crypto-options is an a-list structure with parameters acceptable by ansible-vault tool
 
 (defconst ansible-vault--crypto-options-keys
   '(:vault-password-file :vault-identity-list :vault-identity :vault-encrypt-identity :vault-id-match)
@@ -213,17 +223,49 @@ the 1.2 vault-id syntax."
        (a-get obj :vault-identity-list)
        t))
 
-(defun ansible-vault--crypto-options--can-decrypt-1.2-p (obj)
+(defun ansible-vault--crypto-options--can-encrypt-1.2-p (obj)
   (and (a-associative-p obj)
        (a-get obj :vault-identity-list)
-       (a-get-obj :vault-encrypt-identity)
+       (a-get obj :vault-encrypt-identity)
        t))
 
-;;(a-list :vault-password-file ".vault-pass"
-;;        :vault-identity-list "dev@.vault-id-pass-dev, prod@.vault-id-pass-prod"
-;;        :vault-identity "dev"
-;;        :vault-encrypt-identity "dev"
-;;        :vault-id-match "true")
+(defun ansible-vault--crypto-options--validate (obj)
+  (pcase (a-get obj :vault-identity-list)
+    (`nil obj)
+    (str (a-assoc obj :vault-identity-list (ansible-vault--vault-id-list--validate str)))))
+
+;; vault-id-list is a string that can be parsed to a-list of vault-ids and related password files
+
+(defun ansible-vault--vault-id-list--parse (str)
+  (cl-loop for vault-id-pair-str in (split-string str ", ")
+           for (vault-id vault-file) = (split-string vault-id-pair-str "@")
+           when (and vault-id vault-file
+                     (not (equal vault-file "prompt")))
+           collect (cons vault-id vault-file)))
+
+(defun ansible-vault--vault-id-list--to-string (vault-id-list)
+  (cl-loop for (id . file) in vault-id-list
+           collect (concat id "@" file) into ids
+           finally return (mapconcat #'identity ids ", ")))
+
+(defun ansible-vault--vault-id-list--validate (str)
+  (ansible-vault--vault-id-list--to-string (ansible-vault--vault-id-list--parse str)))
+
+
+
+
+
+
+
+
+
+
+
+
+
+;;(defun ansible-vault--vault-id-list--get (vault-id-list vault-id)
+;;  (a-get vault-id-list vault-id))
+
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Core
@@ -242,22 +284,6 @@ the 1.2 vault-id syntax."
 
 ;; header functions
 
-(defun ansible-vault--parse-vault-header (header)
-  "Takes ansible vault HEADER and parse it, returning alist.
-
-If HEADER is \"$ANSIBLE_VAULT;1.2;AES256;prod\" it will return
-\((:vault-id . \"prod\")
- (:cipher-algorithm . \"AES256\")
- (:version . \"1.2\"))"
-  (unless (string-match ansible-vault--vault-header-regex header)
-    (error (format "Not an ansible-vault header: %s" header)))
-  (cl-reduce
-   (pcase-lambda (acc `(,key . ,n))
-     (pcase (match-string n header)
-       ((and val (guard val))  (a-assoc-in acc (list key) val))
-       (_                      acc)))
-   ansible-vault--vault-header-regex-groups-alist
-   :initial-value '()))
 
 ;; buffer analysis
 
@@ -268,11 +294,11 @@ If HEADER is \"$ANSIBLE_VAULT;1.2;AES256;prod\" it will return
 
 (defun ansible-vault--encrypted-buffer--init-state-header ()
   (let* ((first-line (ansible-vault--get-first-buffer-line))
-         (parsed-header (ansible-vault--parse-vault-header first-line)))
+         (parsed-header (ansible-vault--header-options--parse first-line)))
     (ansible-vault--set-state :buffer-header parsed-header)))
 
 (defun ansible-vault--is-buffer-encrypted ()
-  (and (string-match ansible-vault--vault-header-regex (ansible-vault--get-first-buffer-line)) t))
+  (and (string-match ansible-vault--header-options-regex (ansible-vault--get-first-buffer-line)) t))
 
 ;; ansible.cfg functions
 
@@ -307,7 +333,7 @@ If HEADER is \"$ANSIBLE_VAULT;1.2;AES256;prod\" it will return
                                      :vault-identity-list "vault_identity_list"
                                      :vault-identity "vault_identity"
                                      :vault-encrypt-identity "vault_encrypt_identity"
-                                     :vault-id-match "vault_id_match")))
+                                     :vault-id-match "vault_id_match"))
     (cl-reduce
      (pcase-lambda (acc `(,key . ,cfgkey))
        (pcase (ansible-vault--ansible-cfg--parse-key cfgkey ansible-cfg-content)
@@ -388,13 +414,10 @@ If HEADER is \"$ANSIBLE_VAULT;1.2;AES256;prod\" it will return
                        (message "xxx")
                        (message (buffer-string))
                        (message command)
-                       (let ((start (point-min))
-                             (end (point-max)))
-                         (message (format "yyy: %d %d" start end))
-                         (shell-command-on-region (point-min) (point-max)
-                                                  command
-                                                  cmd-buf-stdout nil
-                                                  cmd-buf-stderr nil))))
+                       (shell-command-on-region (point-min) (point-max)
+                                                command
+                                                cmd-buf-stdout nil
+                                                cmd-buf-stderr nil)))
                  (when env-ansible-vault-password-file
                    (setenv "ANSIBLE_VAULT_PASSWORD_FILE" env-ansible-vault-password-file)))
           (0 (with-current-buffer cmd-buf-stdout
@@ -433,9 +456,10 @@ Run encrypt.")
 (defun ansible-vault-decrypt-current-buffer ()
   "In place decryption of `current-buffer' using `ansible-vault'."
   (interactive)
+  
   (ansible-vault--execute-on-region "decrypt"))
 
-              
+
            
 
 
