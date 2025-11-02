@@ -279,8 +279,23 @@ the 1.2 vault-id syntax."
 
 (defun ansible-vault--buffer--encrypted--init-header-options ()
   (let* ((first-line (ansible-vault--buffer--get-first-line))
-         (parsed-header (ansible-vault--header-options--parse first-line)))
-    (ansible-vault--set-state :buffer: :header-options parsed-header)))
+         (header-options (ansible-vault--header-options--parse first-line)))
+    (ansible-vault--set-state :buffer: :header-options header-options)))
+
+(defun ansible-vault--buffer--to-string ()
+  (save-restriction
+    (widen)
+    (buffer-string)))
+
+(defun ansible-vault--buffer--encrypted--decrypt ()
+  (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
+         (header-options (ansible-vault--get-state :buffer :header-options))
+         (decrypted-str (ansible-vault--run-decrypt crypto-options header-options (ansible-vault--buffer--to-string))))
+    (erase-buffer)
+    (insert decrypted-str)
+    (set-buffer-modified-p nil)
+    (ansible-vault--set-state :buffer :encrypted nil)))
+    
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Misc
@@ -328,23 +343,23 @@ the 1.2 vault-id syntax."
                                      :vault-identity-list "vault_identity_list"
                                      :vault-identity "vault_identity"
                                      :vault-encrypt-identity "vault_encrypt_identity"
-                                     :vault-id-match "vault_id_match")))
-    (cl-reduce
-     (pcase-lambda (acc `(,key . ,cfgkey))
-       (pcase (ansible-vault--ansible-cfg--parse-key cfgkey ansible-cfg-content)
-         ((and val (guard val))   (a-assoc-in acc (list key) val))
-         (_                       acc)))
-     ansible-cfg-options
-     :initial-value '())))
+                                     :vault-id-match "vault_id_match"))
+        (crypto-options (cl-reduce
+                         (pcase-lambda (acc `(,key . ,cfgkey))
+                           (pcase (ansible-vault--ansible-cfg--parse-key cfgkey ansible-cfg-content)
+                             ((and val (guard val))   (a-assoc-in acc (list key) val))
+                             (_                       acc)))
+                         ansible-cfg-options
+                         :initial-value '())))
+    (ansible-vault--crypto-options--validate crypto-options)))
 ;; (ansible-vault--ansible-cfg--parse (ansible-vault--string-of-file "test/ansible.cfg"))
 
-(defun ansible-vault--init-state-ansible-cfg ()
+(defun ansible-vault--ansible-cfg--init-crypto-options ()
   (let* ((ansible-cfg-path (ansible-vault--ansible-cfg--locate))
          (ansible-cfg-content (ansible-vault--string-of-file ansible-cfg-path))
          (ansible-cfg-parsed (ansible-vault--ansible-cfg--parse ansible-cfg-content)))
     (ansible-vault--set-state :ansible-cfg :crypto-options ansible-cfg-parsed)
     (ansible-vault--set-state :ansible-cfg :path ansible-cfg-path)))
-
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Shell
@@ -437,29 +452,90 @@ Run encrypt.")
 
 
 ;; ──────────────────────────────────────────────────────────────
-;; interactive functions
+;; Keymap
 ;; ──────────────────────────────────────────────────────────────
+
+(defvar ansible-vault-mode-map
+  (cl-flet ((genkey (chord) (kbd (concat ansible-vault-minor-mode-prefix " " chord))))
+    (let ((map (make-sparse-keymap)))
+      (define-key map (genkey "d") 'ansible-vault-decrypt-current-buffer)
+;;      (define-key map (genkey "D") 'ansible-vault-decrypt-region)
+;;      (define-key map (genkey "e") 'ansible-vault-encrypt-current-file)
+;;      (define-key map (genkey "E") 'ansible-vault-encrypt-region)
+;;      (define-key map (genkey "p") 'ansible-vault--request-password)
+;;      (define-key map (genkey "i") 'ansible-vault--request-vault-id)
+      map)
+    "Keymap for `ansible-vault' minor mode."))
+
+
+;; ──────────────────────────────────────────────────────────────
+;; Interactive functions
+;; ──────────────────────────────────────────────────────────────
+
+;; the main difference between interactive functions and internal functions is in the suggestion
+;; that internal functions suppose to get valid arguments all the time (as it's me who calls it)
+
+;; on the other hand interactive functions can be called by user, so they must have all the possible
+;; checks in order to ensure we can call appropriate internal functions
 
 (defun ansible-vault-decrypt-current-buffer ()
   "In place decryption of `current-buffer' using `ansible-vault'."
   (interactive)
+  (unless (ansible-vault--get-state :buffer :encrypted)
+    (user-error "Cannot decrypt buffer that is not encrypted yet"))
+  (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
+         (header-options (ansible-vault--get-state :buffer :header-options)))
+    (pcase (a-get header-options :version)
+      ("1.1" (unless (ansible-vault--crypto-options--can-decrypt-1.1-p crypto-options)
+               (user-error "Cannot decrypt (vault header v1.1), check if vault_password_file provided")))
+      ("1.2" (unless (ansible-vault--crypto-options--can-decrypt-1.2-p crypto-options)
+               (user-error "Cannot decrypt (vault header v1.2), check if vault_identity_list provided")))
+      (ver   (user-error "Cannot decrypt due to unknown vault header version: %s" ver)))
+    (ansible-vault--buffer--encrypted--decrypt)))
+
+
+;; ──────────────────────────────────────────────────────────────
+;; Mode
+;; ──────────────────────────────────────────────────────────────
+
+;; functions of mode enabling/disabling are considered as interactive too
+
+(defun ansible-vault-mode-enable ()
+  "Enable `anasible-vault-mode'"
+  (interactive)
+  (unless (ansible-vault--get-state :mode :initialized)
+    (pcase (ansible-vault--buffer--encrypted-p)
+      (`nil (ansible-vault--set-state :buffer :encrypted nil)
+            )
+      (`t   (ansible-vault--set-state :buffer :encrypted t)
+            (ansible-vault--buffer--encrypted--init-header-options)
+            (ansible-vault--ansible-cfg--init-crypto-options)
+            (when ansible-vault-auto-decrypt
+              ansible-vault-decrypt-current-buffer)
+            ))
+    (ansible-vault--set-state :mode :initialized t)
+    ;;(normal-mode)
+    ))
+
+(defun ansible-vault-mode-disable ()
+  "Disable `anasible-vault-mode'"
+  (interactive)
+  nil
+  )
+
+
+
+(define-minor-mode ansible-vault-mode
+  "Minor mode for manipulating ansible-vault files"
+  :lighter " ansible-vault"
+  :keymap ansible-vault-mode-map
+  :group 'ansible-vault
+
+  (if ansible-vault-mode
+      (ansible-vault-mode-enable)
+    (ansible-vault-mode-disable)))
+
   
-  (ansible-vault--execute-on-region "decrypt"))
-
-
-           
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -514,25 +590,6 @@ Run encrypt.")
 ;;     (setq-local ansible-vault--vault-id vault-id)
 ;;     (setq-local ansible-vault--password-file password-file)
 ;;     vault-id-pair))
-
-
-;; unsetting variables and deleting unnecessary files
-
-;; error handling
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ;;;; interactive actions
