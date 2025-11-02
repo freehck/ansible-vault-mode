@@ -280,7 +280,7 @@ the 1.2 vault-id syntax."
 (defun ansible-vault--buffer--encrypted--init-header-options ()
   (let* ((first-line (ansible-vault--buffer--get-first-line))
          (header-options (ansible-vault--header-options--parse first-line)))
-    (ansible-vault--set-state :buffer: :header-options header-options)))
+    (ansible-vault--set-state :buffer :header-options header-options)))
 
 (defun ansible-vault--buffer--to-string ()
   (save-restriction
@@ -339,18 +339,18 @@ the 1.2 vault-id syntax."
 ;; (ansible-vault--ansible-cfg--parse-key "vault_password_file" (ansible-vault--string-of-file "test/ansible.cfg"))
 
 (defun ansible-vault--ansible-cfg--parse (ansible-cfg-content)
-  (let ((ansible-cfg-options (a-list :vault-password-file "vault_password_file"
-                                     :vault-identity-list "vault_identity_list"
-                                     :vault-identity "vault_identity"
-                                     :vault-encrypt-identity "vault_encrypt_identity"
-                                     :vault-id-match "vault_id_match"))
-        (crypto-options (cl-reduce
-                         (pcase-lambda (acc `(,key . ,cfgkey))
-                           (pcase (ansible-vault--ansible-cfg--parse-key cfgkey ansible-cfg-content)
-                             ((and val (guard val))   (a-assoc-in acc (list key) val))
-                             (_                       acc)))
-                         ansible-cfg-options
-                         :initial-value '())))
+  (let* ((ansible-cfg-options (a-list :vault-password-file "vault_password_file"
+                                      :vault-identity-list "vault_identity_list"
+                                      :vault-identity "vault_identity"
+                                      :vault-encrypt-identity "vault_encrypt_identity"
+                                      :vault-id-match "vault_id_match"))
+         (crypto-options (cl-reduce
+                          (pcase-lambda (acc `(,key . ,cfgkey))
+                            (pcase (ansible-vault--ansible-cfg--parse-key cfgkey ansible-cfg-content)
+                              ((and val (guard val))   (a-assoc-in acc (list key) val))
+                              (_                       acc)))
+                          ansible-cfg-options
+                          :initial-value '())))
     (ansible-vault--crypto-options--validate crypto-options)))
 ;; (ansible-vault--ansible-cfg--parse (ansible-vault--string-of-file "test/ansible.cfg"))
 
@@ -413,20 +413,16 @@ the 1.2 vault-id syntax."
                        (setenv "ANSIBLE_VAULT_PASSWORD_FILE" nil))
                      (with-temp-buffer
                        (insert str)
-                       (message "xxx")
-                       (message (buffer-string))
-                       (message command)
-                       (shell-command-on-region (point-min) (point-max)
-                                                command
-                                                cmd-buf-stdout nil
-                                                cmd-buf-stderr nil)))
+                       (let ((inhibit-message t) ; disable output to *Messages* from elisp `message' function
+                             (message-log-max nil)) ; disable output to *Messages* from c-code
+                         (shell-command-on-region (point-min) (point-max)
+                                                  command
+                                                  cmd-buf-stdout nil
+                                                  cmd-buf-stderr nil)
+                         )))
                  (when env-ansible-vault-password-file
                    (setenv "ANSIBLE_VAULT_PASSWORD_FILE" env-ansible-vault-password-file)))
           (0 (with-current-buffer cmd-buf-stdout
-               (message (buffer-name cmd-buf-stdout))
-               (message (buffer-name cmd-buf-stderr))
-               (message "zzz")
-               (message (buffer-string))
                (buffer-string)))
           (_ (progn
                (switch-to-buffer (ansible-vault--get-or-create-error-buffer))
@@ -437,6 +433,8 @@ the 1.2 vault-id syntax."
       (kill-buffer cmd-buf-stdout)
       (kill-buffer cmd-buf-stderr)
       )))
+
+;; (and (message "------------------------") nil)
 
 (defalias 'ansible-vault--run-decrypt
   (apply-partially #'ansible-vault--run :decrypt)
@@ -464,8 +462,8 @@ Run encrypt.")
 ;;      (define-key map (genkey "E") 'ansible-vault-encrypt-region)
 ;;      (define-key map (genkey "p") 'ansible-vault--request-password)
 ;;      (define-key map (genkey "i") 'ansible-vault--request-vault-id)
-      map)
-    "Keymap for `ansible-vault' minor mode."))
+      map))
+  "Keymap for `ansible-vault' minor mode.")
 
 
 ;; ──────────────────────────────────────────────────────────────
@@ -511,7 +509,7 @@ Run encrypt.")
             (ansible-vault--buffer--encrypted--init-header-options)
             (ansible-vault--ansible-cfg--init-crypto-options)
             (when ansible-vault-auto-decrypt
-              ansible-vault-decrypt-current-buffer)
+              (ansible-vault-decrypt-current-buffer))
             ))
     (ansible-vault--set-state :mode :initialized t)
     ;;(normal-mode)
