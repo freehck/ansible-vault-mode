@@ -240,37 +240,22 @@ the 1.2 vault-id syntax."
        (a-get obj :vault-encrypt-identity)
        t))
 
-(defun ansible-vault--crypto-options--validate (obj &optional ansible-cfg-path)
-  (pcase (a-get obj :vault-identity-list)
-    (`nil obj)
-    (str (a-assoc obj :vault-identity-list (ansible-vault--vault-id-list--validate str ansible-cfg-path)))))
-
 ;; vault-id-list is a string that can be parsed to a-list of vault-ids and related password files
 
-(defun ansible-vault--vault-id-list--parse (str)
+(defun ansible-vault--vault-id-list--parse (str &optional dir)
   (cl-loop for vault-id-pair-str in (split-string str ", ")
            for (vault-id vault-file) = (split-string vault-id-pair-str "@")
            when (and vault-id vault-file
                      (not (equal vault-file "prompt")))
+           for vault-file = (if (and (f-relative vault-file) dir)
+                                (expand-file-name vault-file dir)
+                              vault-file)
            collect (cons vault-id vault-file)))
 
 (defun ansible-vault--vault-id-list--to-string (vault-id-list)
   (cl-loop for (id . file) in vault-id-list
            collect (concat id "@" file) into ids
            finally return (mapconcat #'identity ids ", ")))
-
-(defun ansible-vault--vault-id-list--validate (str &optional ansible-cfg-path)
-  ;; if filepath is a fullpath, don't do anything with it
-  ;; but if it's relative, then add ansible-cfg-path dirname before it
-  ;; if ansible-cfg-path not provided, do nothing with relative paths
-  (let* ((vault-id-list
-          (cl-loop with ansible-cfg-dir-path = (when ansible-cfg-path (f-dirname ansible-cfg-path))
-                   for (id . file) in (ansible-vault--vault-id-list--parse str)
-                   for file = (if (and (f-relative-p file) ansible-cfg-dir-path)
-                                  (expand-file-name file ansible-cfg-dir-path)
-                                file)
-                   collect (cons id file))))
-  (ansible-vault--vault-id-list--to-string vault-id-list)))
 
 (defun ansible-vault--vault-id-list--get (vault-id-list vault-id)
   (a-get vault-id-list vault-id))
@@ -300,7 +285,7 @@ the 1.2 vault-id syntax."
 (defun ansible-vault--buffer--encrypted--decrypt ()
   (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
          (header-options (ansible-vault--get-state :buffer :header-options))
-         (decrypted-str (ansible-vault--run-decrypt crypto-options header-options (ansible-vault--buffer--to-string))))
+         (decrypted-str (ansible-vault--run :decrypt crypto-options header-options (ansible-vault--buffer--to-string))))
     (erase-buffer)
     (insert decrypted-str)
     (set-buffer-modified-p nil)
@@ -309,7 +294,7 @@ the 1.2 vault-id syntax."
 (defun ansible-vault--buffer--encrypt ()
   (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
          (header-options (ansible-vault--get-state :buffer :header-options))
-         (encrypted-str (ansible-vault--run-encrypt crypto-options header-options (ansible-vault--buffer--to-string))))
+         (encrypted-str (ansible-vault--run :encrypt crypto-options header-options (ansible-vault--buffer--to-string))))
     (erase-buffer)
     (insert encrypted-str)
     (set-buffer-modified-p nil)
@@ -357,20 +342,27 @@ the 1.2 vault-id syntax."
 ;; (ansible-vault--ansible-cfg--parse-key "vault_password_file" (ansible-vault--string-of-file "test/ansible.cfg"))
 
 (defun ansible-vault--ansible-cfg--parse (ansible-cfg-content ansible-cfg-path)
-  (let* ((ansible-cfg-options (a-list :vault-password-file "vault_password_file"
-                                      :vault-identity-list "vault_identity_list"
-                                      :vault-identity "vault_identity"
-                                      :vault-encrypt-identity "vault_encrypt_identity"
-                                      :vault-id-match "vault_id_match"))
-         (crypto-options (cl-reduce
-                          (pcase-lambda (acc `(,key . ,cfgkey))
-                            (pcase (ansible-vault--ansible-cfg--parse-key cfgkey ansible-cfg-content)
-                              ((and val (guard val))   (a-assoc-in acc (list key) val))
-                              (_                       acc)))
-                          ansible-cfg-options
-                          :initial-value '())))
-    (ansible-vault--crypto-options--validate crypto-options ansible-cfg-path)))
-;; (ansible-vault--ansible-cfg--parse (ansible-vault--string-of-file "test/ansible.cfg"))
+  (let* ((ansible-cfg-options
+          (a-list :vault-password-file "vault_password_file"
+                  :vault-identity-list "vault_identity_list"
+                  :vault-identity "vault_identity"
+                  :vault-encrypt-identity "vault_encrypt_identity"
+                  :vault-id-match "vault_id_match")))
+    (cl-reduce
+     (pcase-lambda (acc `(,key . ,cfgkey))
+       (pcase (ansible-vault--ansible-cfg--parse-key cfgkey ansible-cfg-content)
+         (str (pcase key
+                (:vault-password-file
+                 (a-assoc-in acc (list :vault-password-file)
+                             (expand-file-name str (f-dirname ansible-cfg-path))))
+                (:vault-identity-list
+                 (let ((vault-id-list (ansible-vault--vault-id-list--parse str (f-dirname ansible-cfg-path))))
+                   (a-assoc-in acc (list :vault-identity-list) vault-id-list)))
+                (_ (a-assoc-in acc (list key) str))))
+         (_     acc)))
+     ansible-cfg-options
+     :initial-value '())))
+;; (ansible-vault--ansible-cfg--parse (ansible-vault--string-of-file "test/ansible.cfg") (f-full "test/ansible.cfg"))
 
 (defun ansible-vault--ansible-cfg--init-crypto-options ()
   (let* ((ansible-cfg-path (ansible-vault--ansible-cfg--locate))
@@ -399,31 +391,42 @@ the 1.2 vault-id syntax."
                         (cpush val))))
          ("1.2" (pcase (crypto-options :vault-identity-list)
                   (`nil (error "Unknown vault-identity-list"))
-                  (str  (cl-loop for vault-id in (split-string str ", ")
-                                 do (cpush "--vault-id")
-                                 do (cpush vault-id)))))
+                  (vidl (cl-loop for (id . file) in vidl
+                                 do (progn (cpush "--vault-id")
+                                           (cpush (concat id "@" file)))))))
          (ver   (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
       (:encrypt
        (cpush "encrypt")
        (cpush "--output=-")
-       (pcase (crypto-options :vault-encrypt-identity)
-         (`nil (pcase (crypto-options :vault-password-file)
-                 (`nil (error "Unknown vault-password-file"))
-                 (val  (cpush "--vault-password-file")
-                       (cpush val))))
-         (val  (cpush "--encrypt-vault-id")
-               (cpush val)
-               (cl-loop for vault-id in (split-string str ", ")
-                        do (cpush "--vault-id")
-                        do (cpush vault-id)))))
+       (pcase (header-options :version)
+         ("1.1" (pcase (crypto-options :vault-password-file)
+                  (`nil (error "Unknown vault-password-file"))
+                  (val  (cpush "--vault-password-file")
+                        (cpush val))))
+         ("1.2" (pcase (crypto-options :vault-encrypt-identity)
+                  (`nil (pcase (crypto-options :vault-password-file)
+                          (`nil (error "Unknown vault-password-file"))
+                          (val  (cpush "--vault-password-file")
+                                (cpush val))))
+                  (enc-id (cpush "--encrypt-vault-id")
+                          (cpush enc-id)
+                          (pcase (crypto-options :vault-identity-list)
+                            (`nil (error "Unknown vault-identity-list"))
+                            (vidl (cl-loop for (id . file) in vidl
+                                           when (equal id enc-id)
+                                           do (progn (cpush "--vault-id")
+                                                     (cpush (concat id "@" file)))))))))
+         (_ (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
       (_ (error (format "Unknown action: %s" action))))
     (mapconcat #'identity (reverse command) " "))))
 
 (defun ansible-vault--run (action crypto-options header-options str)
+  ""
   (let ((command (ansible-vault--generate-shell-command action crypto-options header-options))
         (cmd-buf-stdout (generate-new-buffer "ansible-vault-cmd-stdout"))
         (cmd-buf-stderr (generate-new-buffer "ansible-vault-cmd-stderr"))
         (env-ansible-vault-password-file (getenv "ANSIBLE_VAULT_PASSWORD_FILE")))
+    (message command)
     (unwind-protect
         (pcase (unwind-protect
                    (progn
@@ -451,21 +454,6 @@ the 1.2 vault-id syntax."
       (kill-buffer cmd-buf-stdout)
       (kill-buffer cmd-buf-stderr)
       )))
-
-;; (and (message "------------------------") nil)
-
-(defalias 'ansible-vault--run-decrypt
-  (apply-partially #'ansible-vault--run :decrypt)
-  "(ansible-vault--run-decrypt CRYPTO-OPTIONS HEADER-OPTIONS STR)
-
-Run decrypt.")
-
-(defalias 'ansible-vault--run-encrypt
-  (apply-partially #'ansible-vault--run :encrypt)
-  "(ansible-vault--run-decrypt CRYPTO-OPTIONS HEADER-OPTIONS STR
-
-Run encrypt.")
-
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Keymap
@@ -499,8 +487,8 @@ Run encrypt.")
   (interactive)
   (unless (ansible-vault--get-state :buffer :encrypted)
     (user-error "Cannot decrypt unencrypted buffer"))
-  (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
-         (header-options (ansible-vault--get-state :buffer :header-options)))
+  (let ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
+        (header-options (ansible-vault--get-state :buffer :header-options)))
     (pcase (a-get header-options :version)
       ("1.1" (unless (ansible-vault--crypto-options--can-decrypt-1.1-p crypto-options)
                (user-error "Cannot decrypt (vault header v1.1), check if vault_password_file provided")))
@@ -509,28 +497,18 @@ Run encrypt.")
       (ver   (user-error "Cannot decrypt due to unknown vault header version: %s" ver)))
     (ansible-vault--buffer--encrypted--decrypt)))
 
-;; (defun ansible-vault-encrypt-current-buffer ()
-;;   "In place encryption of `current-buffer' using `ansible-vault'."
-;;   (interactive)
-;;   (when (ansible-vault--get-state :buffer :encrypted t)
-;;     (user-error "Cannot encrypt encrypted buffer"))
-;;   (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
-;;          (header-options (ansible-vault--get-state :buffer :header-options)))
-;;     (pcase (a-get crypto-options :vault-encrypt-identity)
-;;       (`nil (pcase 
-;; 
-;;        )
-;;       (_ ))
-;; 
-;; 
-;;   (save-excursion
-;;     (widen)
-;;     (when (and ansible-vault--auto-encryption-enabled
-;;                (not (ansible-vault--is-encrypted-vault-file)))
-;;       (setq-local ansible-vault--point (point))
-;;       (ansible-vault-encrypt-current-buffer)));)
-
-
+(defun ansible-vault-encrypt-current-buffer ()
+  "In place encryption of `current-buffer' using `ansible-vault'."
+  (interactive)
+  (when (ansible-vault--get-state :buffer :encrypted t)
+    (user-error "Cannot encrypt encrypted buffer"))
+  (let ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options)))
+    (pcase (a-get crypto-options :vault-encrypt-identity)
+      (`nil   (unless (a-get crypto-options :vault-password-file)
+                (user-error "Cannot encrypt: neither vault_encrypt_identity nor vault_password_file provided")))
+      (enc-id (unless (a-get crypto-options :vault-identity-list enc-id)
+                (user-error "Cannot encrypt: encryption vault id `%s' not found" enc-id))))
+    (ansible-vault--buffer--encrypt)))
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Mode
