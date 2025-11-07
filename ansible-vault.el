@@ -435,7 +435,9 @@ the 1.2 vault-id syntax."
                      (with-temp-buffer
                        (insert str)
                        (let ((inhibit-message t) ; disable output to *Messages* from elisp `message' function
-                             (message-log-max nil)) ; disable output to *Messages* from c-code
+                             (message-log-max nil) ; disable output to *Messages* from c-code
+                             ;; run ansible-vault somewhere ansible.cfg 100% not present
+                             (default-directory temporary-file-directory))
                          (shell-command-on-region (point-min) (point-max)
                                                   command
                                                   cmd-buf-stdout nil
@@ -464,7 +466,7 @@ the 1.2 vault-id syntax."
     (let ((map (make-sparse-keymap)))
       (define-key map (genkey "d") 'ansible-vault-decrypt-current-buffer)
 ;;      (define-key map (genkey "D") 'ansible-vault-decrypt-region)
-;;      (define-key map (genkey "e") 'ansible-vault-encrypt-current-file)
+      (define-key map (genkey "e") 'ansible-vault-encrypt-current-buffer)
 ;;      (define-key map (genkey "E") 'ansible-vault-encrypt-region)
 ;;      (define-key map (genkey "p") 'ansible-vault--request-password)
 ;;      (define-key map (genkey "i") 'ansible-vault--request-vault-id)
