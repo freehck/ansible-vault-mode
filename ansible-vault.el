@@ -207,6 +207,17 @@ the 1.2 vault-id syntax."
    ansible-vault--header-options-regex-groups-alist
    :initial-value '()))
 
+(defun ansible-vault--header-options--init-by-crypto-options (crypto-options)
+  (cl-flet ((crypto-options (key) (a-get crypto-options key)))
+    (ansible-vault--set-state
+     :buffer :header-options
+     (a-list :version (pcase (or (crypto-options :vault-encrypt-identity)
+                                 (crypto-options :vault-identity-list))
+                        (`nil "1.1")
+                        (_    "1.2"))
+             :cipher-algorithm "AES256"
+             :vault-id (crypto-options :vault-encrypt-identity)))))
+
 ;; crypto-options is an a-list structure with parameters acceptable by ansible-vault tool
 
 (defconst ansible-vault--crypto-options-keys
@@ -403,20 +414,19 @@ the 1.2 vault-id syntax."
                   (`nil (error "Unknown vault-password-file"))
                   (val  (cpush "--vault-password-file")
                         (cpush val))))
-         ("1.2" (pcase (crypto-options :vault-encrypt-identity)
-                  (`nil (pcase (crypto-options :vault-password-file)
-                          (`nil (error "Unknown vault-password-file"))
-                          (val  (cpush "--vault-password-file")
-                                (cpush val))))
-                  (enc-id (cpush "--encrypt-vault-id")
-                          (cpush enc-id)
-                          (pcase (crypto-options :vault-identity-list)
+         ("1.2" (let ((enc-id (or (header-options :vault-id)
+                                  (crypto-options :vault-encrypt-identity))))
+                  (unless enc-id
+                    (error "Undefined vault-encrypt-identity"))
+                  (cpush "--encrypt-vault-id")
+                  (cpush enc-id)
+                  (pcase (crypto-options :vault-identity-list)
                             (`nil (error "Unknown vault-identity-list"))
                             (vidl (cl-loop for (id . file) in vidl
                                            when (equal id enc-id)
                                            do (progn (cpush "--vault-id")
-                                                     (cpush (concat id "@" file)))))))))
-         (_ (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
+                                                     (cpush (concat id "@" file))))))))
+         (ver (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
       (_ (error (format "Unknown action: %s" action))))
     (mapconcat #'identity (reverse command) " "))))
 
@@ -524,6 +534,9 @@ the 1.2 vault-id syntax."
   (unless (ansible-vault--get-state :mode :initialized)
     (pcase (ansible-vault--buffer--encrypted-p)
       (`nil (ansible-vault--set-state :buffer :encrypted nil)
+            (ansible-vault--ansible-cfg--init-crypto-options)
+            (ansible-vault--header-options--init-by-crypto-options
+             (ansible-vault--get-state :ansible-cfg :crypto-options))
             )
       (`t   (ansible-vault--set-state :buffer :encrypted t)
             (ansible-vault--buffer--encrypted--init-header-options)
