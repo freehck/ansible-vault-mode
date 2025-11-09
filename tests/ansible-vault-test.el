@@ -226,5 +226,9 @@ creds:
 (ert-deftest ansible-vault--fulltest-encrypted-1.2-prod ()
   (test/ansible-vault--fulltest "general/encrypted-1.2-prod.yaml"))
 
+(ert-deftest ansible-vault--fulltest-encrypted-1.1-executable-passfile ()
+  (test/ansible-vault--fulltest "executable-passfile/encrypted-1.1.yaml"))
+
+
 
 (provide 'ansible-vault-test)
