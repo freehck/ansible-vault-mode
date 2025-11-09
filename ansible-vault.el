@@ -360,18 +360,21 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
     (cl-reduce
      (pcase-lambda (acc `(,key . ,cfgkey))
        (pcase (ansible-vault--ansible-cfg--parse-key cfgkey ansible-cfg-content)
-         (str (pcase key
-                (:vault-password-file
-                 (a-assoc-in acc (list :vault-password-file)
-                             (expand-file-name str (f-dirname ansible-cfg-path))))
-                (:vault-identity-list
-                 (let ((vault-id-list (ansible-vault--vault-id-list--parse str (f-dirname ansible-cfg-path))))
-                   (a-assoc-in acc (list :vault-identity-list) vault-id-list)))
-                (_ (a-assoc-in acc (list key) str))))
+         ((and str (guard (stringp str)))
+           (pcase key
+             (:vault-password-file
+              (a-assoc-in acc (list :vault-password-file)
+                          (expand-file-name str (f-dirname ansible-cfg-path))))
+             (:vault-identity-list
+              (let ((vault-id-list (ansible-vault--vault-id-list--parse str (f-dirname ansible-cfg-path))))
+                (a-assoc-in acc (list :vault-identity-list) vault-id-list)))
+             (_ (a-assoc-in acc (list key) str))))
          (_     acc)))
      ansible-cfg-options
      :initial-value '())))
-;; (ansible-vault--ansible-cfg--parse (ansible-vault--string-of-file "test/ansible.cfg") (f-full "test/ansible.cfg"))
+
+;;(let ((ansible-cfg (f-full "tests/executable-passfile/ansible.cfg")))
+;;  (ansible-vault--ansible-cfg--parse (ansible-vault--string-of-file ansible-cfg) ansible-cfg))
 
 (defun ansible-vault--ansible-cfg--init-crypto-options ()
   (let* ((ansible-cfg-path (ansible-vault--ansible-cfg--locate))
