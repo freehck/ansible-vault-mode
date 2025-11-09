@@ -143,6 +143,15 @@ Affects only the first mode initialization"
   :type 'boolean
   :group 'ansible-vault)
 
+(defcustom ansible-vault-mode-enable-by-magic t
+  "If set to t, add the the mode to auto-minor-mode-magic-alist.
+
+Works only when set before `ansible-vault' is loaded.
+If it's already loaded, use `ansible-vault-mode-enable-by-magic'
+function instead."
+  :type 'boolean
+  :group 'ansible-vault)
+
 ;; ──────────────────────────────────────────────────────────────
 ;; Internal variables
 ;; ──────────────────────────────────────────────────────────────
@@ -556,6 +565,24 @@ Affects only the first mode initialization"
 
 ;; functions of mode enabling/disabling are considered as interactive too
 
+(defun ansible-vault-mode-disable ()
+  "Disable `anasible-vault-mode'"
+  (interactive)
+  (when (ansible-vault--get-state :buffer :initially-encrypted)
+    (when (and (buffer-modified-p)
+             (ansible-vault--get-state :buffer :encrypted))
+      (ansible-vault-encrypt-current-buffer))))
+
+(define-minor-mode ansible-vault-mode
+  "Minor mode for manipulating ansible-vault files"
+  :lighter " ansible-vault"
+  :keymap ansible-vault-mode-map
+  :group 'ansible-vault
+
+  (if ansible-vault-mode
+      (ansible-vault-mode-enable)
+    (ansible-vault-mode-disable)))
+
 (defun ansible-vault-mode-enable ()
   "Enable `anasible-vault-mode'"
   (interactive)
@@ -599,53 +626,23 @@ Affects only the first mode initialization"
     (normal-mode))
   )
 
-(defun ansible-vault-mode-disable ()
-  "Disable `anasible-vault-mode'"
-  (interactive)
-  (when (ansible-vault--get-state :buffer :initially-encrypted)
-    (when (and (buffer-modified-p)
-             (ansible-vault--get-state :buffer :encrypted))
-      (ansible-vault-encrypt-current-buffer))))
+(put 'ansible-vault-mode 'permanent-local t)
 
-(define-minor-mode ansible-vault-mode
-  "Minor mode for manipulating ansible-vault files"
-  :lighter " ansible-vault"
-  :keymap ansible-vault-mode-map
-  :group 'ansible-vault
+;; ──────────────────────────────────────────────────────────────
+;; Optional Integrations
+;; ──────────────────────────────────────────────────────────────
 
-  (if ansible-vault-mode
-      (ansible-vault-mode-enable)
-    (ansible-vault-mode-disable)))
+(defun ansible-vault-mode-enable-by-magic ()
+  (add-to-list 'auto-minor-mode-magic-alist
+               (cons #'ansible-vault--buffer--encrypted-p #'ansible-vault-mode)))
 
-  
+(when ansible-vault-mode-enable-by-magic
+  (ansible-vault-mode-enable-by-magic))
 
+;; ──────────────────────────────────────────────────────────────
+;; Can be useful later
+;; ──────────────────────────────────────────────────────────────
 
-
-
-
-
-
-
-
-
-
-
-
-;; setting local variables and creating necessary files
-
-;; (defun ansible-vault--create-password-file (password)
-;;   "Generate a temporary file to store PASSWORD.
-;; 
-;; The generated file is located in TMPDIR, and is marked read-only
-;; for owner."
-;;   (let* ((temp-file (make-temp-file "ansible-vault-secret-")))
-;;     (set-file-modes temp-file #o0600)
-;;     (append-to-file password nil temp-file)
-;;     (set-file-modes temp-file #o0400)
-;;     (setq-local ansible-vault--password-file temp-file)
-;;     (push ansible-vault--password-file ansible-vault--password-file-list)
-;;     temp-file))
-;; 
 ;; (defun ansible-vault--request-password (password)
 ;;   "Prompt user a for the password for the current buffer.
 ;; 
@@ -673,223 +670,6 @@ Affects only the first mode initialization"
 ;;     (setq-local ansible-vault--password-file password-file)
 ;;     vault-id-pair))
 
-
-;;;; interactive actions
-;;
-;;(defun ansible-vault-decrypt-current-file ()
-;;  "Decrypts the current buffer and writes the file."
-;;  (interactive)
-;;  (setq-local ansible-vault--auto-encryption-enabled nil)
-;;  (ansible-vault-decrypt-current-buffer)
-;;  (save-buffer 0))
-;;
-;;(defun ansible-vault-encrypt-current-buffer ()
-;;  "In place encryption of `current-buffer' using `ansible-vault'."
-;;  (interactive)
-;;  (ansible-vault--execute-on-region "encrypt"))
-;;
-;;(defun ansible-vault-encrypt-current-file ()
-;;  "Encrypts the current buffer and writes the file."
-;;  (interactive)
-;;  (setq-local ansible-vault--auto-encryption-enabled t)
-;;  (set-buffer-modified-p t)
-;;  (save-buffer 0)
-;;  (ansible-vault--fingerprint-buffer))
-;;
-;;(defun ansible-vault-decrypt-region (start end)
-;;  "In place decryption of region from START to END using `ansible-vault'."
-;;  (interactive "r")
-;;  (let ((inhibit-read-only t))
-;;    ;; Restrict the following operations to the selected region.
-;;    (narrow-to-region start end)
-;;    (goto-char (point-min))
-;;    ;; Delete header and save non-vault values
-;;    (let* ((first-line (thing-at-point 'line t))
-;;           (match-data (string-match (rx line-start (group (zero-or-more any)) "!vault |" line-end) first-line))
-;;           (header (match-string 1 first-line)))
-;;      ;; remove header if it exists
-;;      (when (and match-data (zerop match-data))
-;;        (kill-whole-line))
-;;      ;; realign encrypted data
-;;      (goto-char (point-min))
-;;      (let* ((line-count 0))
-;;        (while (zerop line-count)
-;;          (delete-horizontal-space)
-;;          (setq
-;;           line-count (forward-line))))
-;;      ;; fingerprint new buffer
-;;      (ansible-vault--fingerprint-buffer)
-;;      ;; decrypt region
-;;      (ansible-vault-decrypt-current-buffer)
-;;      ;; replace header
-;;      (when header
-;;        (goto-char (point-min))
-;;        (insert header)))
-;;    ;; show the whole buffer again
-;;    (widen)))
-;;
-;;(defun ansible-vault-encrypt-region (start end)
-;;  "In place encryption of region from START to END using `ansible-vault'."
-;;  (interactive "r")
-;;  (ansible-vault--execute-on-region "encrypt_string" start end))
-;;
-;;;; key mapping
-;;
-;;(defun ansible-vault--chord (chord)
-;;  "Key sequence generator for ansible-vault minor mode.
-;;
-;;CHORD is the trailing key sequence to append ot the mode prefix."
-;;  (kbd (concat ansible-vault-minor-mode-prefix " " chord)))
-;;
-;;(defvar ansible-vault-mode-map
-;;  (let ((map (make-sparse-keymap)))
-;;    (define-key map (ansible-vault--chord "d") 'ansible-vault-decrypt-current-file)
-;;    (define-key map (ansible-vault--chord "D") 'ansible-vault-decrypt-region)
-;;    (define-key map (ansible-vault--chord "e") 'ansible-vault-encrypt-current-file)
-;;    (define-key map (ansible-vault--chord "E") 'ansible-vault-encrypt-region)
-;;    (define-key map (ansible-vault--chord "p") 'ansible-vault--request-password)
-;;    (define-key map (ansible-vault--chord "i") 'ansible-vault--request-vault-id)
-;;    map)
-;;  "Keymap for `ansible-vault' minor mode.")
-;;
-;;;; hooks
-;;
-;;(defun ansible-vault--before-save-hook ()
-;;  "`before-save-hook' for files managed by `ansible-vault-mode'.
-;;
-;;Saves the current position and encrypts the file before writing
-;;to disk."
-;;;  (save-excursion
-;;;    (widen)
-;;    (when (and ansible-vault--auto-encryption-enabled
-;;               (not (ansible-vault--is-encrypted-vault-file)))
-;;      (setq-local ansible-vault--point (point))
-;;      (ansible-vault-encrypt-current-buffer)));)
-;;
-;;(defun ansible-vault--after-save-hook ()
-;;  "`after-save-hook' for files managed by `ansible-vault-mode'.
-;;
-;;Decrypts the file, and returns the point to the position saved by
-;;the `before-save-hook'."
-;;;  (save-excursion
-;;;    (widen)
-;;    (when (and ansible-vault--auto-encryption-enabled
-;;               (ansible-vault--is-encrypted-vault-file))
-;;      (ansible-vault-decrypt-current-buffer)
-;;      (set-buffer-modified-p nil)
-;;      (goto-char ansible-vault--point)
-;;      (setq-local ansible-vault--point 0)));)
-;;
-;;(defun ansible-vault--kill-buffer-hook ()
-;;  "`kill-buffer-hook' for buffers managed by `ansible-vault-mode'.
-;;
-;;Flushes saved password state."
-;;  (when ansible-vault--vault-id
-;;    (ansible-vault--flush-vault-id))
-;;  (when ansible-vault--password-file
-;;    (ansible-vault--flush-password-file)))
-;;
-;;;;;###autoload
-;;(defun ansible-vault--kill-emacs-hook ()
-;;  "`kill-emacs-hook' for Emacs when `ansible-vault-mode' is loaded.
-;;
-;;Ensures deletion of ansible-vault generated password files."
-;;  (dolist (file ansible-vault--password-file-list)
-;;    (when (file-readable-p file)
-;;      (delete-file file))
-;;    ))
-;;
-;;;; ──────────────────────────────────────────────────────────────
-;;;; Mode
-;;;; ──────────────────────────────────────────────────────────────
-;;
-;;;;;###autoload
-;;(define-minor-mode ansible-vault-mode
-;;  "Minor mode for manipulating ansible-vault files"
-;;  :lighter " ansible-vault"
-;;  :keymap ansible-vault-mode-map
-;;  :group 'ansible-vault
-;;
-;;  (if ansible-vault-mode
-;;      ;; Enable the mode
-;;      (progn
-;;        (message "enable")
-;;
-;;        ;; Disable backups
-;;        (setq-local
-;;         backup-inhibited t)
-;;        (message "enable 1")
-;;        ;; Disable auto-save
-;;        (when auto-save-default
-;;          (auto-save-mode -1))
-;;        (message "enable 2")
-;;        ;; Decrypt the current buffer first if it needs to be
-;;        (when (ansible-vault--is-encrypted-vault-file)
-;;          (message "enable 3")
-;;          (setq-local ansible-vault--auto-encryption-enabled t)
-;;          (message "enable 4")
-;;          (ansible-vault--fingerprint-buffer)
-;;          (message "enable 5")
-;;          (ansible-vault-decrypt-current-buffer)
-;;          (message "enable 6")
-;;          (set-buffer-modified-p nil))
-;;        
-;;        ;; Add mode hooks
-;;        (message "enable 7")
-;;        (add-hook 'before-save-hook 'ansible-vault--before-save-hook t t)
-;;        (add-hook 'after-save-hook 'ansible-vault--after-save-hook t t)
-;;        (add-hook 'kill-buffer-hook 'ansible-vault--kill-buffer-hook t t)
-;;
-;;        ;; make hooks resistant to kill-all-local-variables
-;;        (put 'before-save-hook 'permanent-local t)
-;;        (put 'after-save-hook 'permanent-local t)
-;;        (put 'kill-buffer-hook 'permanent-local t)
-;;
-;;        (message "enable 8")
-;;        ;; change major mode
-;;        ;(normal-mode)
-;;        )
-;;
-;;    (message "disable")
-;;    
-;;    ;; Disable the mode
-;;    (remove-hook 'after-save-hook 'ansible-vault--after-save-hook t)
-;;    (remove-hook 'before-save-hook 'ansible-vault--before-save-hook t)
-;;    (remove-hook 'kill-buffer-hook 'ansible-vault--kill-buffer-hook t)
-;;
-;;    ;; Only re-encrypt the buffer if buffer is changed; otherwise revert
-;;    ;; to on-disk contents.
-;;    (if (and (buffer-modified-p) (not (ansible-vault--is-encrypted-vault-file)))
-;;        (ansible-vault-encrypt-current-buffer)
-;;      (revert-buffer nil t nil))
-;;    ;; revert-buffer calls normal-mode
-;;    ;; normal-mode calls set-auto-mode
-;;    ;; set-auto-mode looks into magic-mode-alist
-;;    ;; and I have added ansible-vault-mode to magic-mode-alist!!!
-;;    ;; so it will be enabled here back
-;;
-;;    ;; Clean up password state
-;;    (ansible-vault--flush-password-file)
-;;    (ansible-vault--flush-vault-id)
-;;
-;;    (if auto-save-default (auto-save-mode 1))
-;;
-;;    (setq-local
-;;     backup-inhibited nil)
-;;
-;;    (ansible-vault--clear-local-variables)))
-;;
-;;;; make the mode undescructable
-;;
-;;(put 'ansible-vault-mode 'permanent-local t)
-;;
-;;;; ──────────────────────────────────────────────────────────────
-;;;; Integrations
-;;;; ──────────────────────────────────────────────────────────────
-;;
-;;;(add-to-list 'auto-minor-mode-magic-alist
-;;;             (cons #'ansible-vault--is-encrypted-vault-file #'ansible-vault-mode))
-;;
 ;;;; ──────────────────────────────────────────────────────────────
 ;;;; Obsolete aliases (explicit!)
 ;;;; ──────────────────────────────────────────────────────────────
@@ -905,12 +685,14 @@ Affects only the first mode initialization"
 ;;(define-obsolete-variable-alias
 ;;  'ansible-vault--flush-password 'ansible-vault--flush-password-file "0.4.2"
 ;;  "Renamed for semantic correctness.")
-;;
-;;;; ──────────────────────────────────────────────────────────────
-;;;; Footer
-;;;; ──────────────────────────────────────────────────────────────
-;;
-;;(provide 'ansible-vault)
-;;
-;;;;; ansible-vault.el ends here
 
+
+
+
+;; ──────────────────────────────────────────────────────────────
+;; Footer
+;; ──────────────────────────────────────────────────────────────
+
+(provide 'ansible-vault)
+
+;;; ansible-vault.el ends here
