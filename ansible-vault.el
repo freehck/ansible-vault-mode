@@ -639,59 +639,35 @@ function instead."
 (when ansible-vault-mode-enable-by-magic
   (ansible-vault-mode-enable-by-magic))
 
+;; ──────────────────────────────────────────────────────────────
+;; Obsolete aliases
+;; ──────────────────────────────────────────────────────────────
+
+;; none at the moment
+;; define-obsolete-variable-alias and so on will be here
+
+;; ──────────────────────────────────────────────────────────────
+;; TODO list
+;; ──────────────────────────────────────────────────────────────
+
+;; version 1.0 will be released after implementing this
+
+;; TODO: add menu
+;; 1) possibility to check current crypto-options
+;; 2) possibility to check current header-options
+;; 3) possibility to check current ansible.cfg path
+;; 4) ability to change crypto-options
+;; 5) ability to change header-options
+
+;; TODO: add ansible.cfg monitoring
+;; 1) if ansible.cfg modified, refresh it and reinit crypto- and header-options
+;; 2) if a more clouse ansible.cfg found, refresh options
+
 ;; TODO: add magit integration
 ;; 1) to watch diffs -- maybe there're other options
 ;; 2) to revert hunks -- mandatory
 
-;; ──────────────────────────────────────────────────────────────
-;; Can be useful later
-;; ──────────────────────────────────────────────────────────────
-
-;; (defun ansible-vault--request-password (password)
-;;   "Prompt user a for the password for the current buffer.
-;; 
-;; PASSWORD ansible-vault password to be stored."
-;;   (interactive
-;;    (list (read-passwd "Vault Password: ")))
-;;   (ansible-vault--create-password-file password))
-;; 
-;; (defun ansible-vault--request-vault-id (vault-id &optional password-file)
-;;   "Prompt user for a vault-id for the current buffer.
-;; 
-;; If the vault-id doesn't have an associated password file, request
-;; a password from the user as well.
-;; 
-;; VAULT-ID ansible-vault vault id.
-;; PASSWORD-FILE path to the stored secret for provided VAULT-ID."
-;;   (interactive "Vault Id: ")
-;;   (let* ((vault-id-pair
-;;           (or (assoc vault-id ansible-vault-vault-id-alist)
-;;               (let* ((password-file (or password-file
-;;                                         (call-interactively 'ansible-vault--request-password))))
-;;                 (car (push (cons vault-id password-file) ansible-vault-vault-id-alist)))))
-;;          (password-file (or password-file (cdr vault-id-pair))))
-;;     (setq-local ansible-vault--vault-id vault-id)
-;;     (setq-local ansible-vault--password-file password-file)
-;;     vault-id-pair))
-
-;;;; ──────────────────────────────────────────────────────────────
-;;;; Obsolete aliases (explicit!)
-;;;; ──────────────────────────────────────────────────────────────
-;;
-;;(define-obsolete-variable-alias
-;;  'ansible-vault-pass-file 'ansible-vault-password-file "0.4.0"
-;;  "Migrated to unify naming conventions.")
-;;
-;;(define-obsolete-variable-alias
-;;  'ansible-vault--is-vault-file 'ansible-vault--is-encrypted-vault-file "0.4.2"
-;;  "Renamed for semantic correctness.")
-;;
-;;(define-obsolete-variable-alias
-;;  'ansible-vault--flush-password 'ansible-vault--flush-password-file "0.4.2"
-;;  "Renamed for semantic correctness.")
-
-
-
+;; TODO: add inline ansible-vault snippets support
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Footer
