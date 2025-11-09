@@ -193,8 +193,8 @@ creds:
     (buffer-string)))
 
 (defun test/ansible-vault--fulltest (file &optional func)
-  (let* ((file-src "general/encrypted-1.1.yaml")
-         (file-dst (expand-file-name "test.yaml" "run"))
+  (let* ((file-src (expand-file-name file))
+         (file-dst (expand-file-name "test.yaml" (expand-file-name "run" (f-dirname file-src))))
          (initial-str (file-content-as-string "general/decrypted.yaml"))
          (addition-str "\n# Appended by test\n")
          (modified-initial-str (concat initial-str addition-str)))
@@ -217,13 +217,13 @@ creds:
         (delete-file file-dst)))))
 
 (ert-deftest ansible-vault--fulltest-encrypted-1.1 ()
-  (test/ansible-vault--fulltest "encrypted-1.1.yaml"))
+  (test/ansible-vault--fulltest "general/encrypted-1.1.yaml"))
 
 (ert-deftest ansible-vault--fulltest-encrypted-1.2-dev ()
-  (test/ansible-vault--fulltest "encrypted-1.2-dev.yaml"))
+  (test/ansible-vault--fulltest "general/encrypted-1.2-dev.yaml"))
 
 (ert-deftest ansible-vault--fulltest-encrypted-1.2-prod ()
-  (test/ansible-vault--fulltest "encrypted-1.2-prod.yaml"))
+  (test/ansible-vault--fulltest "general/encrypted-1.2-prod.yaml"))
 
 
 (provide 'ansible-vault-test)
