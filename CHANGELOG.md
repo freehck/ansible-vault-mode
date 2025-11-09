@@ -6,16 +6,19 @@ Full rewrite.
 
 - Stop using `magic-mode-alist` as it was intended for major modes only, migrated to
   `auto-minor-mode-magic-alist` from `auto-minor-mode` package.
-- Stop using temporary files. Nothing to clean now when we disable mode.
+- Stop using temporary files. Nothing to clean up when we disable the mode.
 - Move all the state variables into a separate alist.
 - Add ERT tests.
 - Fix toggling mode problem (#27, #29, #34).
+
 
 
 ### version 0.6.1
 
  - Add compatibility fixes for Emacs 26.1 (issue #24)
  - Add magic-mode-alist integration (issue #26)
+
+
 
 ### version 0.6.0
 

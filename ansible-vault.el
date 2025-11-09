@@ -9,7 +9,7 @@
 ;; Created: 2016-09-25
 ;; Version: 0.7.0
 ;; Keywords: ansible, ansible-vault, tools
-;; Package-Requires: ((emacs "26.1") (auto-minor-mode "20180527.1") (a "1.0")
+;; Package-Requires: ((emacs "27.1") (auto-minor-mode "20180527.1") (a "1.0")
 
 ;; This file is not part of GNU Emacs.
 
@@ -56,6 +56,7 @@
 (require 'map)
 (require 'a) ;; for alist functions
 (require 'auto-minor-mode) ;; to enable the mode automatically when open encrypted file
+(require 'transient) ;; for interactive menu
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Constants
@@ -485,21 +486,46 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
       )))
 
 ;; ──────────────────────────────────────────────────────────────
+;; Interactive Menu
+;; ──────────────────────────────────────────────────────────────
+
+(transient-define-suffix ansible-vault--menu--ansible-cfg-path ()
+  "Set ansible.cfg path."
+  :transient t
+  :description (lambda () (format "Current ansible.cfg path:\t\t%s"
+                                  (or (ansible-vault--get-state :ansible-cfg :path) "-")))
+  (interactive)
+  (let* ((current (ansible-vault--get-state :ansible-cfg :path))
+         (default-dir (if current (file-name-directory current) default-directory))
+         (new-path (read-file-name "ansible.cfg path: "
+                                   default-dir
+                                   nil
+                                   'confirm
+                                   "ansible.cfg")))
+    (when (and new-path (not (file-exists-p new-path)))
+      (user-error "File does not exist: %s" new-path))
+    (ansible-vault--set-state :ansible-cfg :path new-path)
+    (ansible-vault--ansible-cfg--init-crypto-options)
+    (transient--show)))
+
+(transient-define-prefix ansible-vault--menu ()
+  "Control panel for `ansible-vault-mode'."
+  ["Actions"
+   ("d" "Decrypt buffer" ansible-vault-decrypt-current-buffer)
+   ("e" "Encrypt buffer" ansible-vault-encrypt-current-buffer)]
+  ["State"
+   ("-c" ansible-vault--menu--ansible-cfg-path)]
+  )
+
+;; ──────────────────────────────────────────────────────────────
 ;; Keymap
 ;; ──────────────────────────────────────────────────────────────
 
 (defvar ansible-vault-mode-map
-  (cl-flet ((genkey (chord) (kbd (concat ansible-vault-minor-mode-prefix " " chord))))
-    (let ((map (make-sparse-keymap)))
-      (define-key map (genkey "d") 'ansible-vault-decrypt-current-buffer)
-;;      (define-key map (genkey "D") 'ansible-vault-decrypt-region)
-      (define-key map (genkey "e") 'ansible-vault-encrypt-current-buffer)
-;;      (define-key map (genkey "E") 'ansible-vault-encrypt-region)
-;;      (define-key map (genkey "p") 'ansible-vault--request-password)
-;;      (define-key map (genkey "i") 'ansible-vault--request-vault-id)
-      map))
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd ansible-vault-minor-mode-prefix) 'ansible-vault--menu)
+    map)
   "Keymap for `ansible-vault' minor mode.")
-
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Interactive functions
