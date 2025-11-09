@@ -136,6 +136,12 @@ the 1.2 vault-id syntax."
   :type 'boolean
   :group 'ansible-vault)
 
+(defcustom ansible-vault-auto-determine-major-mode-by-decrypted-content nil
+  "Try to determine an appropriate major mode after decrypting a buffer.
+
+Affects only the first mode initialization"
+  :type 'boolean
+  :group 'ansible-vault)
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Internal variables
@@ -303,13 +309,16 @@ the 1.2 vault-id syntax."
     (ansible-vault--set-state :buffer :encrypted nil)))
     
 (defun ansible-vault--buffer--encrypt ()
-  (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
-         (header-options (ansible-vault--get-state :buffer :header-options))
-         (encrypted-str (ansible-vault--run :encrypt crypto-options header-options (ansible-vault--buffer--to-string))))
-    (erase-buffer)
-    (insert encrypted-str)
-    (set-buffer-modified-p nil)
-    (ansible-vault--set-state :buffer :encrypted t)))
+  (if (buffer-modified-p)
+      (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
+             (header-options (ansible-vault--get-state :buffer :header-options))
+             (encrypted-str (ansible-vault--run :encrypt crypto-options header-options
+                                                (ansible-vault--buffer--to-string))))
+        (erase-buffer)
+        (insert encrypted-str)
+        (set-buffer-modified-p nil))
+    (revert-buffer nil t nil))
+  (ansible-vault--set-state :buffer :encrypted t))
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Misc
@@ -512,7 +521,7 @@ the 1.2 vault-id syntax."
 (defun ansible-vault-encrypt-current-buffer ()
   "In place encryption of `current-buffer' using `ansible-vault'."
   (interactive)
-  (when (ansible-vault--get-state :buffer :encrypted t)
+  (when (ansible-vault--get-state :buffer :encrypted)
     (user-error "Cannot encrypt encrypted buffer"))
   (let ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options)))
     (pcase (a-get crypto-options :vault-encrypt-identity)
@@ -521,6 +530,25 @@ the 1.2 vault-id syntax."
       (enc-id (unless (a-get crypto-options :vault-identity-list enc-id)
                 (user-error "Cannot encrypt: encryption vault id `%s' not found" enc-id))))
     (ansible-vault--buffer--encrypt)))
+
+
+;; ──────────────────────────────────────────────────────────────
+;; Integration with hooks
+;; ──────────────────────────────────────────────────────────────
+
+(defun ansible-vault--before-save ()
+  (unless (ansible-vault--get-state :buffer :encrypted)
+    (ansible-vault--set-state :restore-point (point))
+    (ansible-vault--buffer--encrypt)
+    ))
+
+(defun ansible-vault--after-save ()
+  (when (ansible-vault--get-state :buffer :encrypted)
+    (ansible-vault--buffer--encrypted--decrypt)
+    (set-buffer-modified-p nil)
+    (goto-char (ansible-vault--get-state :restore-point))
+    (ansible-vault--set-state :restore-point nil)
+    ))
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Mode
@@ -531,8 +559,16 @@ the 1.2 vault-id syntax."
 (defun ansible-vault-mode-enable ()
   "Enable `anasible-vault-mode'"
   (interactive)
+
+  ;; disable backups and auto-save
+  (setq-local backup-inhibited t)
+  (when auto-save-default (auto-save-mode -1))
+
+  ;; initialize state
   (unless (ansible-vault--get-state :mode :initialized)
-    (pcase (ansible-vault--buffer--encrypted-p)
+    (ansible-vault--set-state :buffer :initially-encrypted (ansible-vault--buffer--encrypted-p))
+    ;; different initialization for encrypted and unencrypted buffers
+    (pcase (ansible-vault--get-state :buffer :initially-encrypted)
       (`nil (ansible-vault--set-state :buffer :encrypted nil)
             (ansible-vault--ansible-cfg--init-crypto-options)
             (ansible-vault--header-options--init-by-crypto-options
@@ -541,20 +577,35 @@ the 1.2 vault-id syntax."
       (`t   (ansible-vault--set-state :buffer :encrypted t)
             (ansible-vault--buffer--encrypted--init-header-options)
             (ansible-vault--ansible-cfg--init-crypto-options)
-            (when ansible-vault-auto-decrypt
-              (ansible-vault-decrypt-current-buffer))
             ))
-    (ansible-vault--set-state :mode :initialized t)
-    ;;(normal-mode)
-    ))
+    (ansible-vault--set-state :mode :initialized t))
+
+  ;; automatically decrypt buffer if needed
+  (when (and (ansible-vault--get-state :buffer :encrypted)
+             ansible-vault-auto-decrypt)
+    (ansible-vault-decrypt-current-buffer))
+  
+  ;; add hooks
+  (add-hook 'before-save-hook 'ansible-vault--before-save t t)
+  (put 'before-save-hook 'permanent-local t)
+  (add-hook 'after-save-hook 'ansible-vault--after-save t t)
+  (put 'after-save-hook 'permanent-local t)
+    
+  ;; optionally run major mode switch in order to enable some appropriate mode by
+  ;; magic-mode-alist using unencrypted buffer content
+  (when (and ansible-vault-auto-determine-major-mode-by-decrypted-content
+             (ansible-vault--get-state :buffer :initially-encrypted)
+             (not (ansible-vault--get-state :buffer :encrypted)))
+    (normal-mode))
+  )
 
 (defun ansible-vault-mode-disable ()
   "Disable `anasible-vault-mode'"
   (interactive)
-  nil
-  )
-
-
+  (when (ansible-vault--get-state :buffer :initially-encrypted)
+    (when (and (buffer-modified-p)
+             (ansible-vault--get-state :buffer :encrypted))
+      (ansible-vault-encrypt-current-buffer))))
 
 (define-minor-mode ansible-vault-mode
   "Minor mode for manipulating ansible-vault files"
