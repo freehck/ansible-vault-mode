@@ -66,22 +66,22 @@
 (ert-deftest ansible-vault--ansible-cfg-functions ()
   (with-temp-buffer
     ;; emulate file open procedure w/o enabling any modes
-    (setq buffer-file-name (f-full "encrypted-1.1.yaml"))
-    (insert-file-contents "encrypted-1.1.yaml")
+    (setq buffer-file-name (f-full "general/encrypted-1.1.yaml"))
+    (insert-file-contents "general/encrypted-1.1.yaml")
     (set-buffer-modified-p nil)
     ;; enable pseudo ansible-vault-mode
     (setq-local ansible-vault--state '())
     ;; test
     (ansible-vault--ansible-cfg--init-crypto-options)
-    (should (equal (ansible-vault--get-state :ansible-cfg :path) (f-full "ansible.cfg")))
+    (should (equal (ansible-vault--get-state :ansible-cfg :path) (f-full "general/ansible.cfg")))
     (should (equal (ansible-vault--get-state :ansible-cfg :crypto-options :vault-identity-list "dev")
-                   (f-full ".vault-id-pass-dev")))
+                   (f-full "general/.vault-id-pass-dev")))
     (should (equal (ansible-vault--get-state :ansible-cfg :crypto-options :vault-identity-list "prod")
-                   (f-full ".vault-id-pass-prod")))
+                   (f-full "general/.vault-id-pass-prod")))
     (should (equal (ansible-vault--get-state :ansible-cfg :crypto-options :vault-identity-list "none")
-                   (f-full ".vault-pass")))
+                   (f-full "general/.vault-pass")))
     (should (equal (ansible-vault--get-state :ansible-cfg :crypto-options :vault-password-file)
-                   (f-full ".vault-pass")))
+                   (f-full "general/.vault-pass")))
     (should (equal (ansible-vault--get-state :ansible-cfg :crypto-options :vault-identity)           "dev"))
     (should (equal (ansible-vault--get-state :ansible-cfg :crypto-options :vault-encrypt-identity)   "dev"))
     (should (equal (ansible-vault--get-state :ansible-cfg :crypto-options :vault-id-match)           "true"))
@@ -91,9 +91,9 @@
   (with-temp-buffer
     ;; enable pseudo ansible-vault-mode
     (setq-local ansible-vault--state '())
-    ;; open file encrypted-1.1.yaml
-    (setq buffer-file-name (f-full "encrypted-1.1.yaml"))
-    (insert-file-contents "encrypted-1.1.yaml")
+    ;; open file
+    (setq buffer-file-name (f-full "general/encrypted-1.1.yaml"))
+    (insert-file-contents "general/encrypted-1.1.yaml")
     (set-buffer-modified-p nil)
     ;; test
     (ansible-vault--buffer--encrypted--init-header-options)
@@ -102,15 +102,15 @@
           (ho (ansible-vault--get-state :buffer :header-options)))
       (should (equal (ansible-vault--generate-shell-command :decrypt co ho)
                      (concat "ansible-vault decrypt --output=- "
-                             "--vault-password-file " (f-full ".vault-pass")))))))
+                             "--vault-password-file " (f-full "general/.vault-pass")))))))
 
 (ert-deftest ansible-vault--generate-shell-command--decrypt-1.2 ()
   (with-temp-buffer
     ;; enable pseudo ansible-vault-mode
     (setq-local ansible-vault--state '())
-    ;; open file encrypted-1.2-dev.yaml
-    (setq buffer-file-name (f-full "encrypted-1.2-dev.yaml"))
-    (insert-file-contents "encrypted-1.2-dev.yaml")
+    ;; open file
+    (setq buffer-file-name (f-full "general/encrypted-1.2-dev.yaml"))
+    (insert-file-contents "general/encrypted-1.2-dev.yaml")
     (set-buffer-modified-p nil)
     ;; test
     (ansible-vault--buffer--encrypted--init-header-options)
@@ -119,17 +119,17 @@
           (ho (ansible-vault--get-state :buffer :header-options)))
       (should (equal (ansible-vault--generate-shell-command :decrypt co ho)
                      (concat "ansible-vault decrypt --output=-"
-                             " --vault-id dev@" (f-full ".vault-id-pass-dev")
-                             " --vault-id prod@" (f-full ".vault-id-pass-prod")
-                             " --vault-id none@" (f-full ".vault-pass")))))))
+                             " --vault-id dev@" (f-full "general/.vault-id-pass-dev")
+                             " --vault-id prod@" (f-full "general/.vault-id-pass-prod")
+                             " --vault-id none@" (f-full "general/.vault-pass")))))))
 
 (ert-deftest ansible-vault--generate-shell-command--encrypt-1.1 ()
   (with-temp-buffer
     ;; enable pseudo ansible-vault-mode
     (setq-local ansible-vault--state '())
-    ;; open file encrypted-1.2-dev.yaml
-    (setq buffer-file-name (f-full "encrypted-1.1.yaml"))
-    (insert-file-contents "encrypted-1.1.yaml")
+    ;; open file
+    (setq buffer-file-name (f-full "general/encrypted-1.1.yaml"))
+    (insert-file-contents "general/encrypted-1.1.yaml")
     (set-buffer-modified-p nil)
     ;; test
     (ansible-vault--buffer--encrypted--init-header-options)
@@ -138,15 +138,15 @@
           (ho (ansible-vault--get-state :buffer :header-options)))
       (should (equal (ansible-vault--generate-shell-command :encrypt co ho)
                      (concat "ansible-vault encrypt --output=-"
-                             " --vault-password-file " (f-full ".vault-pass")))))))
+                             " --vault-password-file " (f-full "general/.vault-pass")))))))
 
 (ert-deftest ansible-vault--generate-shell-command--encrypt-1.2 ()
   (with-temp-buffer
     ;; enable pseudo ansible-vault-mode
     (setq-local ansible-vault--state '())
-    ;; open file encrypted-1.2-dev.yaml
-    (setq buffer-file-name (f-full "encrypted-1.2-dev.yaml"))
-    (insert-file-contents "encrypted-1.2-dev.yaml")
+    ;; open file
+    (setq buffer-file-name (f-full "general/encrypted-1.2-dev.yaml"))
+    (insert-file-contents "general/encrypted-1.2-dev.yaml")
     (set-buffer-modified-p nil)
     ;; test
     (ansible-vault--buffer--encrypted--init-header-options)
@@ -156,15 +156,15 @@
       (should (equal (ansible-vault--generate-shell-command :encrypt co ho)
                      (concat "ansible-vault encrypt --output=-"
                              " --encrypt-vault-id dev"
-                             " --vault-id dev@" (f-full ".vault-id-pass-dev")))))))
+                             " --vault-id dev@" (f-full "general/.vault-id-pass-dev")))))))
 
 (ert-deftest ansible-vault--run ()
   (with-temp-buffer
     ;; enable pseudo ansible-vault-mode
     (setq-local ansible-vault--state '())
-    ;; open file encrypted-1.1.yaml
-    (setq buffer-file-name (f-full "encrypted-1.1.yaml"))
-    (insert-file-contents "encrypted-1.1.yaml")
+    ;; open file
+    (setq buffer-file-name (f-full "general/encrypted-1.1.yaml"))
+    (insert-file-contents "general/encrypted-1.1.yaml")
     (set-buffer-modified-p nil)
     ;; test
     (ansible-vault--buffer--encrypted--init-header-options)
@@ -172,7 +172,7 @@
     (let ((co (ansible-vault--get-state :ansible-cfg :crypto-options))
           (ho (ansible-vault--get-state :buffer :header-options)))
       (should (equal (ansible-vault--generate-shell-command :decrypt co ho)
-                     (concat "ansible-vault decrypt --output=- --vault-password-file " (f-full ".vault-pass"))))
+                     (concat "ansible-vault decrypt --output=- --vault-password-file " (f-full "general/.vault-pass"))))
       
       (let* ((decrypted-str (ansible-vault--run :decrypt co ho (buffer-string)))
              (encrypted-str (ansible-vault--run :encrypt co ho decrypted-str))
@@ -193,9 +193,9 @@ creds:
     (buffer-string)))
 
 (defun test/ansible-vault--fulltest (file &optional func)
-  (let* ((file-src "encrypted-1.1.yaml")
+  (let* ((file-src "general/encrypted-1.1.yaml")
          (file-dst (expand-file-name "test.yaml" "run"))
-         (initial-str (file-content-as-string "decrypted.yaml"))
+         (initial-str (file-content-as-string "general/decrypted.yaml"))
          (addition-str "\n# Appended by test\n")
          (modified-initial-str (concat initial-str addition-str)))
     (make-directory (file-name-directory file-dst) t)

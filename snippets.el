@@ -56,6 +56,10 @@
 
 ;; TODO: add inline ansible-vault snippets support
 
+;; TODO: add rekey functionality
+
+;; TODO: add a graphical header for encrypted region (or file)
+
 ;; ──────────────────────────────────────────────────────────────
 ;; Can be useful later
 ;; ──────────────────────────────────────────────────────────────

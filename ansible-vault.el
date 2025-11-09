@@ -1,4 +1,4 @@
-;;; ansible-vault.el --- Minor mode for editing ansible vault files -*- lexical-binding: t; -*-
+;;; ansible-vault.el --- Minor mode for editing files encrypted by ansible-vault -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2016-2025 Zachary Elliott
 ;; Copyright (C) 2025-20.. Dmitrii Kashin
@@ -7,7 +7,7 @@
 ;; Maintainer: Dmitrii Kashin <freehck@yandex.ru>
 ;; URL: http://github.com/freehck/ansible-vault-mode
 ;; Created: 2016-09-25
-;; Version: 0.9.0
+;; Version: 0.7.0
 ;; Keywords: ansible, ansible-vault, tools
 ;; Package-Requires: ((emacs "26.1") (auto-minor-mode "20180527.1") (a "1.0")
 
@@ -61,7 +61,7 @@
 ;; Constants
 ;; ──────────────────────────────────────────────────────────────
 
-(defconst ansible-vault-version "0.9.0"
+(defconst ansible-vault-version "0.7.0"
   "`ansible-vault' version.")
 
 ;; ──────────────────────────────────────────────────────────────
