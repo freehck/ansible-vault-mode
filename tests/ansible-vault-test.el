@@ -195,7 +195,7 @@ creds:
 (defun test/ansible-vault--fulltest (file &optional func)
   (let* ((file-src (expand-file-name file))
          (file-dst (expand-file-name "test.yaml" (expand-file-name "run" (f-dirname file-src))))
-         (initial-str (file-content-as-string "general/decrypted.yaml"))
+         (initial-str (file-content-as-string "decrypted.yaml"))
          (addition-str "\n# Appended by test\n")
          (modified-initial-str (concat initial-str addition-str)))
     (make-directory (file-name-directory file-dst) t)

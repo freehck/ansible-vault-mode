@@ -1,6 +1,0 @@
----
-creds:
-  user: "my-service-user"
-  pass: "my-secret-password"
-
-...
