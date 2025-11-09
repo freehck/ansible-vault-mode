@@ -214,7 +214,8 @@ creds:
             (should (equal modified-initial-str (buffer-string)))
             (when func (funcall func)))
         (kill-buffer buf)
-        (delete-file file-dst)))))
+        (delete-file file-dst)
+        (delete-directory (f-dirname file-dst))))))
 
 (ert-deftest ansible-vault--fulltest-encrypted-1.1 ()
   (test/ansible-vault--fulltest "general/encrypted-1.1.yaml"))
