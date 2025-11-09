@@ -142,6 +142,12 @@ function instead."
           :cipher-algorithm 2
           :vault-id 3))
 
+(defvar ansible-vault--tempdir (expand-file-name "emacs-ansible-vault-mode" temporary-file-directory)
+  "Temporary clean directory to run ansible-vault binary in.
+
+We use it because in order to ensure ansible-vault binary won't be able
+to find any ansible.cfg file to use.")
+
 ;; ──────────────────────────────────────────────────────────────
 ;; Local variables
 ;; ──────────────────────────────────────────────────────────────
@@ -152,8 +158,7 @@ function instead."
   "Permanent local variable to keep the `ansible-vault-mode' state.
 
 The possible values of this variable can vary between `ansible-vault'
-package versions."
-  )
+package versions.")
 (make-variable-buffer-local 'ansible-vault--state)
 (put 'ansible-vault--state 'permanent-local t)
 
@@ -169,6 +174,12 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
         (newval (car (reverse keys-and-newval))))
     (setq-local ansible-vault--state
                 (a-assoc-in ansible-vault--state keys newval))))
+
+;; initial content
+(defvar ansible-vault--encrypted-content nil
+  "Permanent local variable to keep a buffer's encrypted content.")
+(make-variable-buffer-local 'ansible-vault--encrypted-content)
+(put 'ansible-vault--encrypted-content 'permanent-local t)
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Data Structures
@@ -291,7 +302,9 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
 (defun ansible-vault--buffer--encrypted--decrypt ()
   (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
          (header-options (ansible-vault--get-state :buffer :header-options))
-         (decrypted-str (ansible-vault--run :decrypt crypto-options header-options (ansible-vault--buffer--to-string))))
+         (bufstr (ansible-vault--buffer--to-string))
+         (decrypted-str (ansible-vault--run :decrypt crypto-options header-options bufstr)))
+    (setq-local ansible-vault--encrypted-content bufstr)
     (erase-buffer)
     (insert decrypted-str)
     (set-buffer-modified-p nil)
@@ -306,7 +319,9 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
         (erase-buffer)
         (insert encrypted-str)
         (set-buffer-modified-p nil))
-    (revert-buffer nil t nil))
+    (erase-buffer)
+    (insert ansible-vault--encrypted-content)
+    (set-buffer-modified-p nil))
   (ansible-vault--set-state :buffer :encrypted t))
 
 ;; ──────────────────────────────────────────────────────────────
@@ -437,6 +452,8 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
         (cmd-buf-stdout (generate-new-buffer "ansible-vault-cmd-stdout"))
         (cmd-buf-stderr (generate-new-buffer "ansible-vault-cmd-stderr"))
         (env-ansible-vault-password-file (getenv "ANSIBLE_VAULT_PASSWORD_FILE")))
+    (unless (f-directory-p ansible-vault--tempdir)
+      (make-directory ansible-vault--tempdir))
     ;;(message command)
     (unwind-protect
         (pcase (unwind-protect
@@ -447,8 +464,7 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
                        (insert str)
                        (let ((inhibit-message t) ; disable output to *Messages* from elisp `message' function
                              (message-log-max nil) ; disable output to *Messages* from c-code
-                             ;; run ansible-vault somewhere ansible.cfg 100% not present
-                             (default-directory temporary-file-directory))
+                             (default-directory ansible-vault--tempdir))
                          (shell-command-on-region (point-min) (point-max)
                                                   command
                                                   cmd-buf-stdout nil
@@ -508,6 +524,7 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
       ("1.2" (unless (ansible-vault--crypto-options--can-decrypt-1.2-p crypto-options)
                (user-error "Cannot decrypt (vault header v1.2), check if vault_identity_list provided")))
       (ver   (user-error "Cannot decrypt due to unknown vault header version: %s" ver)))
+    (message "Decrypting. Please wait...")
     (ansible-vault--buffer--encrypted--decrypt)))
 
 (defun ansible-vault-encrypt-current-buffer ()
@@ -521,6 +538,7 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
                 (user-error "Cannot encrypt: neither vault_encrypt_identity nor vault_password_file provided")))
       (enc-id (unless (a-get crypto-options :vault-identity-list enc-id)
                 (user-error "Cannot encrypt: encryption vault id `%s' not found" enc-id))))
+    (message "Encrypting. Please wait...")
     (ansible-vault--buffer--encrypt)))
 
 
