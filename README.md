@@ -1,6 +1,11 @@
+[![MELPA Stable](https://stable.melpa.org/packages/ansible-vault-badge.svg)](melpa-stable)
+[![MELPA](https://melpa.org/packages/ansible-vault-badge.svg)](melpa)
+
 # ansible-vault-mode
 
-Minor mode for in-place manipulations with files encrypted by [ansible-vault][ansible-vault].
+Minor mode for editing files encrypted by [ansible-vault][ansible-vault].
+
+The package is available in [MELPA Stable](melpa-stable) and [MELPA](melpa).
 
 ## Installation
 
@@ -18,125 +23,42 @@ Put this into `~/.emacs`:
 M-x package-install RET ansible-vault RET
 ```
 
-### Development way
-
-Put this into `~/.emacs`:
-
-```lisp
-(use-package git :ensure t)
-
-(defun my/setup-git-package (&rest args)
-  (require 'git)
-  (require 'f)
-  (let ((repo-url (plist-get args :repo-url))
-        (repo-dir (plist-get args :repo-dir))
-        (repo-branch (plist-get args :repo-branch))
-        (feature (plist-get args :feature)))
-    (unless (and repo-dir repo-url)
-      (error "Keys :repo-dir and :repo-url are required"))
-    (let* ((repo-branch (or repo-branch "master"))
-           (repo-dir (f-full repo-dir)))
-      (unless (file-directory-p repo-dir)
-        (message "Create directory: %s" repo-dir)
-        (make-directory repo-dir t))
-      (let ((git-repo repo-dir))
-        (unless (git-repo? repo-dir)
-          (message "Clone repo %s to %s" repo-url repo-dir)
-          (git-clone repo-url repo-dir))
-        (unless (git-on-branch? repo-branch)
-          (message "Checkout to branch: %s" repo-branch)
-          (git-checkout repo-branch)))
-      (let* ((feature-filename (concat feature ".el"))
-             (feature-file-fullpath (expand-file-name feature-filename repo-dir)))
-        (message "Load feature from file: %s" feature-file-fullpath)
-        (load feature-file-fullpath nil t)))))
-
-(my/setup-git-package :feature "ansible-vault"
-                      :repo-dir "~/repos/github.com/freehck/ansible-vault-mode"
-                      :repo-url "git@github.com:freehck/ansible-vault-mode.git"
-                      :repo-branch "develop")
-
-```
-
-### Good old very manual way
-
-Download this repo, store somewhere on disk, and put this into `~/.emacs`:
-
-```lisp
-(add-to-list 'load-path "/path/to/ansible-vault")
-(require 'ansible-vault)
-```
-
-
-
 ## Usage
+
+By default the mode is enabled automatically when you open an encrypted file by using
+`auto-minor-mode-magic-alist` (from [auto-minor-mode](auto-minor-mode)). You can disable this
+behaviour by setting `ansible-vault-mode-enable-by-magic` to `nil`.
 
 When enabled, the mode tries to find `ansible.cfg` file. First it checks `ANSIBLE_CONFIG`
 environment variable. If not set, it performs an upward search starting from your encrypted file
-location. Then it tries `~/.ansible.cfg` and eventually `/etc/ansible/ansible.cfg`.
+location. Then it tries `~/.ansible.cfg` and eventually `/etc/ansible/ansible.cfg`. When
+`ansible.cfg` found, it is parsed in order to get `ansible-vault` configuration parameters. These
+parameters will be associated with the file buffer and will be used to run `ansible-vault` binary
+to perform decryption and encryption.
 
-So I recommend storing `ansible.cfg` in the root of the repo with your ansible code.
+The recommendation is to store `ansible.cfg` in the root of the repo with your ansible code.
 
-When the mode found `ansible.cfg` file, it takes `vault_password_file` directive from it to
-detirmine where to take the vault password from. Then it uses it to decrypt/encrypt the file.
+By default when you open an encrypted file it will be decrypted automatically. You can disable this
+behaviour by setting `ansible-vault-auto-decrypt` to `nil`.
 
-The mode decrypts and encrypts files automatically: decrypts when you enable the mode, encrypts back
-when you save the modifed buffer.
+The mode uses hooks `before-save-hook` and `after-save-hook`. So when you save your file it will be
+re-encrypted back.
 
-After initialization it tries to activate an appropriate major-mode for by calling `normal-mode` on
-already decrypted buffer.
+By default the mode will try to determine and enable an appropriate major mode by calling
+`normal-mode` after initialization. This means that major modes that must be activated by
+`magic-mode-alist` will be activated as if your file wasn't encrypted. You can disable this
+behaviour by setting `ansible-vault-auto-determine-major-mode-by-decrypted-content` to `nil`.
 
-In case of errors look into ```*ansible-vault-error*``` buffer.
+In case of errors have a look into ```*ansible-vault-error*``` buffer.
 
-### Vault Id configuration
-
-Ansible Vault now supports vault-id for multiple passwords. You can persistently track vault ids
-between sessions by configuring the `ansible-vault-vault-id-alist` value with `(vault-id
-. password-file)` pairs.
-
-```lisp
-(setq
- ansible-vault-vault-id-alist
- '(("nonprod" . "/home/notprod/ansible/vault/nonprod-secret")
-   ("prod" . "/home/notprod/ansible/vault/prod-secret")
-   ("foo" . "/etc/foo.secret")))
-```
-
-This allows properly tagged v1.2 vault files to automatically find and use their associated password
-files.
-
-Nota Bene:<br/>
-The current maintainer didn't test this functionality, so you're on your own with it.
-
+All the variables described above can by constomized with
+`M-x customize-group RET ansible-vault RET`
 
 
 ## Release Notes
 
-### version 0.6.1
+Look into [CHANGELOG.md](changelog).
 
- - Add compatibility fixes for Emacs 26.1 (issue #24)
- - Add magic-mode-alist integration (issue #26)
-
-### version 0.6.0
-
- - Now `ansible-vault-mode` allows to change major mode, and even do it by default right after
-   initialization, so you can work with encrypted files as if they were the ordinary ones. They will
-   be re-encrypted when you save your changes.
-   
- 
-
-### version 0.5.0 and beyond
-
- - `ansible-vault-mode` is now more aggressive in detecting valid password files. If it fails to
-   locate a valid password file it will prompt the user for input.
-
- - The minor mode now defines some key bindings under `C-c a`
-    - `C-c a d` Decrypts the current file and saves it
-    - `C-c a D` Decrypts the current region
-    - `C-c a e` Encrypts the current file and saves it
-    - `C-c a E` Encrypts the current region
-    - `C-c a p` Updates the password of the current buffer
-    - `C-c a i` Updates the vault-id of the current buffer
 
 
 
@@ -165,4 +87,8 @@ Peter Bray      [@illumino](https://github.com/illumino)<br/>
 [ansible-vault]: http://docs.ansible.com/ansible/playbooks_vault.html
 [yaml]: http://yaml.org/
 [issues]: https://github.com/freehck/ansible-vault-mode
-[license]: https://raw.githubusercontent.com/freehck/ansible-vault-mode/refs/heads/master/LICENSE
+[license]: LICENSE
+[changelog]: CHANGELOG.md
+[melpa-stable]: https://stable.melpa.org/#/ansible-vault
+[melpa]: https://melpa.org/#/ansible-vault
+[auto-minor-mode]: https://stable.melpa.org/#/auto-minor-mode
