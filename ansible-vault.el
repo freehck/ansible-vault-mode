@@ -148,14 +148,23 @@ function instead."
 
 ;; internal state a-list
 
-(defvar ansible-vault--state '())
+(defvar ansible-vault--state '()
+  "Permanent local variable to keep the `ansible-vault-mode' state.
+
+The possible values of this variable can vary between `ansible-vault'
+package versions."
+  )
 (make-variable-buffer-local 'ansible-vault--state)
 (put 'ansible-vault--state 'permanent-local t)
 
 (defun ansible-vault--get-state (&rest keys)
+  "Get value from `ansible-vault--state' alist determined by KEYS."
   (a-get-in ansible-vault--state keys))
 
 (defun ansible-vault--set-state (&rest keys-and-newval)
+  "Set VALUE to `ansible-vault--state' alist determined by KEYS.
+
+KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
   (let ((keys (butlast keys-and-newval))
         (newval (car (reverse keys-and-newval))))
     (setq-local ansible-vault--state
