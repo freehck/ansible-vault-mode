@@ -187,5 +187,43 @@ creds:
         (should (equal decrypted-str redecrypted-str))
         ))))
 
-                     
+(defun file-content-as-string (file)
+  (with-temp-buffer
+    (insert-file-contents file)
+    (buffer-string)))
+
+(defun test/ansible-vault--fulltest (file &optional func)
+  (let* ((file-src "encrypted-1.1.yaml")
+         (file-dst (expand-file-name "test.yaml" "run"))
+         (initial-str (file-content-as-string "decrypted.yaml"))
+         (addition-str "\n# Appended by test\n")
+         (modified-initial-str (concat initial-str addition-str)))
+    (make-directory (file-name-directory file-dst) t)
+    (copy-file file-src file-dst t)
+    (let ((buf (find-file-noselect file-dst)))
+      (unwind-protect
+          (with-current-buffer buf
+            (should (equal major-mode 'yaml-mode))
+            (should ansible-vault-mode)
+            (should (equal initial-str (buffer-string)))
+            (should (memq 'ansible-vault--before-save before-save-hook))
+            (should (memq 'ansible-vault--after-save after-save-hook))
+            (goto-char (point-max))
+            (insert addition-str)
+            (save-buffer)
+            (should (equal modified-initial-str (buffer-string)))
+            (when func (funcall func)))
+        (kill-buffer buf)
+        (delete-file file-dst)))))
+
+(ert-deftest ansible-vault--fulltest-encrypted-1.1 ()
+  (test/ansible-vault--fulltest "encrypted-1.1.yaml"))
+
+(ert-deftest ansible-vault--fulltest-encrypted-1.2-dev ()
+  (test/ansible-vault--fulltest "encrypted-1.2-dev.yaml"))
+
+(ert-deftest ansible-vault--fulltest-encrypted-1.2-prod ()
+  (test/ansible-vault--fulltest "encrypted-1.2-prod.yaml"))
+
+
 (provide 'ansible-vault-test)

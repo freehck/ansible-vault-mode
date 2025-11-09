@@ -136,7 +136,7 @@ the 1.2 vault-id syntax."
   :type 'boolean
   :group 'ansible-vault)
 
-(defcustom ansible-vault-auto-determine-major-mode-by-decrypted-content nil
+(defcustom ansible-vault-auto-determine-major-mode-by-decrypted-content t
   "Try to determine an appropriate major mode after decrypting a buffer.
 
 Affects only the first mode initialization"
@@ -565,24 +565,6 @@ function instead."
 
 ;; functions of mode enabling/disabling are considered as interactive too
 
-(defun ansible-vault-mode-disable ()
-  "Disable `anasible-vault-mode'"
-  (interactive)
-  (when (ansible-vault--get-state :buffer :initially-encrypted)
-    (when (and (buffer-modified-p)
-             (ansible-vault--get-state :buffer :encrypted))
-      (ansible-vault-encrypt-current-buffer))))
-
-(define-minor-mode ansible-vault-mode
-  "Minor mode for manipulating ansible-vault files"
-  :lighter " ansible-vault"
-  :keymap ansible-vault-mode-map
-  :group 'ansible-vault
-
-  (if ansible-vault-mode
-      (ansible-vault-mode-enable)
-    (ansible-vault-mode-disable)))
-
 (defun ansible-vault-mode-enable ()
   "Enable `anasible-vault-mode'"
   (interactive)
@@ -626,6 +608,24 @@ function instead."
     (normal-mode))
   )
 
+(defun ansible-vault-mode-disable ()
+  "Disable `anasible-vault-mode'"
+  (interactive)
+  (when (ansible-vault--get-state :buffer :initially-encrypted)
+    (when (and (buffer-modified-p)
+             (ansible-vault--get-state :buffer :encrypted))
+      (ansible-vault-encrypt-current-buffer))))
+
+(define-minor-mode ansible-vault-mode
+  "Minor mode for manipulating ansible-vault files"
+  :lighter " ansible-vault"
+  :keymap ansible-vault-mode-map
+  :group 'ansible-vault
+
+  (if ansible-vault-mode
+      (ansible-vault-mode-enable)
+    (ansible-vault-mode-disable)))
+
 (put 'ansible-vault-mode 'permanent-local t)
 
 ;; ──────────────────────────────────────────────────────────────
@@ -638,6 +638,10 @@ function instead."
 
 (when ansible-vault-mode-enable-by-magic
   (ansible-vault-mode-enable-by-magic))
+
+;; TODO: add magit integration
+;; 1) to watch diffs -- maybe there're other options
+;; 2) to revert hunks -- mandatory
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Can be useful later
