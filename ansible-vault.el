@@ -7,71 +7,44 @@
 ;; Maintainer: Dmitrii Kashin <freehck@yandex.ru>
 ;; URL: http://github.com/freehck/ansible-vault-mode
 ;; Created: 2016-09-25
-;; Version: 0.7.0
+;; Version: 0.9.0
 ;; Keywords: ansible, ansible-vault, tools
 ;; Package-Requires: ((emacs "26.1") (auto-minor-mode "20180527.1") (a "1.0")
 
 ;; This file is not part of GNU Emacs.
 
 ;;; Commentary:
-;; No comments
+
+;; A mode to work with files encrypted by ansible-vault like if they're ordinary ones.
+;;
+;; Decryption and encryption processes are automatic.  You can just open encrypted files and they
+;; will be decrypted by fly.  When you make changes, just save a file as usual with C-x C-s, and it
+;; will be re-encrypted back.
+;;
+;; Parameters for ansible-vault are taken from an ansbile.cfg file.  The ansible.cfg file path is
+;; detirmined either by ANSIBLE_CONFIG unix env variable, or by an upward search from current file
+;; path.
+;;
+;; Feel safe to change major modes after the mode enabled: it will persist, and won't forget to
+;; re-ecnrypt file before save.
+;;
+;; For now the mode works only with fully encrypted files, and does not support in-line
+;; ansible-vault snippets.
 
 ;;; License:
 
-;; This program is free software; you can redistribute it and/or modify it
-;; under the terms of the GNU General Public License as published by the Free
-;; Software Foundation; either version 3 of the License, or (at your option)
-;; any later version.
+;; This program is free software; you can redistribute it and/or modify it under the terms of the
+;; GNU General Public License version 3 as published by the Free Software Foundation.
 
-;; This program is distributed in the hope that it will be useful, but WITHOUT
-;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
-;; more details.
+;; This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+;; even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+;; General Public License for more details.
 
-;; You should have received a copy of the GNU General Public License along
-;; with GNU Emacs; see the file COPYING.  If not, write to the Free Software
-;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301,
-;; USA.
+;; You should have received a copy of the GNU General Public License along with GNU Emacs; see the
+;; file COPYING.  If not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth
+;; Floor, Boston, MA 02110-1301, USA.
 
 ;;; Code:
-
-;; ──────────────────────────────────────────────────────────────
-;; Ansible Documentation Snippets
-;; ──────────────────────────────────────────────────────────────
-
-;; ansible-vault variables
-;; https://docs.ansible.com/ansible/latest/reference_appendices/config.html
-
-;; DEFAULT_VAULT_PASSWORD_FILE ANSIBLE_VAULT_PASSWORD_FILE
-;; [defaults] vault_password_file None
-;; 
-;; The vault password file to use. Equivalent to --vault-password-file or --vault-id. If executable,
-;; it will be run and the resulting stdout will be used as the password.
-
-;; DEFAULT_VAULT_IDENTITY_LIST ANSIBLE_VAULT_IDENTITY_LIST
-;; [defaults] vault_identity_list []
-;; 
-;; A list of vault-ids to use by default. Equivalent to multiple --vault-id args. Vault-ids are
-;; tried in order.
-
-;; DEFAULT_VAULT_IDENTITY ANSIBLE_VAULT_IDENTITY
-;; [defaults] vault_identity default
-;; 
-;; The label to use for the default vault id label in cases where a vault id label is not provided.
-
-;; DEFAULT_VAULT_ENCRYPT_IDENTITY ANSIBLE_VAULT_ENCRYPT_IDENTITY
-;; [defaults] vault_encrypt_identity
-;; 
-;; The vault_id to use for encrypting by default. If multiple vault_ids are provided, this specifies
-;; which to use for encryption. The --encrypt-vault-id CLI option overrides the configured value.
-
-;; DEFAULT_VAULT_ID_MATCH ANSIBLE_VAULT_ID_MATCH
-;; [defaults] vault_id_match false
-;; 
-;; If true, decrypting vaults with a vault id will only try the password from the matching vault-id.
-
-
-
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Dependencies
@@ -84,13 +57,11 @@
 (require 'a) ;; for alist functions
 (require 'auto-minor-mode) ;; to enable the mode automatically when open encrypted file
 
-
-
 ;; ──────────────────────────────────────────────────────────────
 ;; Constants
 ;; ──────────────────────────────────────────────────────────────
 
-(defconst ansible-vault-version "0.7.0"
+(defconst ansible-vault-version "0.9.0"
   "`ansible-vault' version.")
 
 ;; ──────────────────────────────────────────────────────────────
@@ -645,29 +616,6 @@ function instead."
 
 ;; none at the moment
 ;; define-obsolete-variable-alias and so on will be here
-
-;; ──────────────────────────────────────────────────────────────
-;; TODO list
-;; ──────────────────────────────────────────────────────────────
-
-;; version 1.0 will be released after implementing this
-
-;; TODO: add menu
-;; 1) possibility to check current crypto-options
-;; 2) possibility to check current header-options
-;; 3) possibility to check current ansible.cfg path
-;; 4) ability to change crypto-options
-;; 5) ability to change header-options
-
-;; TODO: add ansible.cfg monitoring
-;; 1) if ansible.cfg modified, refresh it and reinit crypto- and header-options
-;; 2) if a more clouse ansible.cfg found, refresh options
-
-;; TODO: add magit integration
-;; 1) to watch diffs -- maybe there're other options
-;; 2) to revert hunks -- mandatory
-
-;; TODO: add inline ansible-vault snippets support
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Footer
