@@ -22,11 +22,11 @@
 ;; will be re-encrypted back.
 ;;
 ;; Parameters for ansible-vault are taken from an ansbile.cfg file.  The ansible.cfg file path is
-;; detirmined either by ANSIBLE_CONFIG unix env variable, or by an upward search from current file
+;; determined either by ANSIBLE_CONFIG unix env variable, or by an upward search from current file
 ;; path.
 ;;
 ;; Feel safe to change major modes after the mode enabled: it will persist, and won't forget to
-;; re-ecnrypt file before save.
+;; re-encrypt file before save.
 ;;
 ;; For now the mode works only with fully encrypted files, and does not support in-line
 ;; ansible-vault snippets.
@@ -425,7 +425,7 @@ function instead."
         (cmd-buf-stdout (generate-new-buffer "ansible-vault-cmd-stdout"))
         (cmd-buf-stderr (generate-new-buffer "ansible-vault-cmd-stderr"))
         (env-ansible-vault-password-file (getenv "ANSIBLE_VAULT_PASSWORD_FILE")))
-    (message command)
+    ;;(message command)
     (unwind-protect
         (pcase (unwind-protect
                    (progn
@@ -537,7 +537,7 @@ function instead."
 ;; functions of mode enabling/disabling are considered as interactive too
 
 (defun ansible-vault-mode-enable ()
-  "Enable `anasible-vault-mode'"
+  "Enable `ansible-vault-mode'"
   (interactive)
 
   ;; disable backups and auto-save
@@ -587,6 +587,7 @@ function instead."
              (ansible-vault--get-state :buffer :encrypted))
       (ansible-vault-encrypt-current-buffer))))
 
+;;;###autoload
 (define-minor-mode ansible-vault-mode
   "Minor mode for manipulating ansible-vault files"
   :lighter " ansible-vault"
@@ -607,8 +608,9 @@ function instead."
   (add-to-list 'auto-minor-mode-magic-alist
                (cons #'ansible-vault--buffer--encrypted-p #'ansible-vault-mode)))
 
-(when ansible-vault-mode-enable-by-magic
-  (ansible-vault-mode-enable-by-magic))
+(with-eval-after-load 'auto-minor-mode
+  (when ansible-vault-mode-enable-by-magic
+    (ansible-vault-mode-enable-by-magic)))
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Obsolete aliases
