@@ -489,33 +489,44 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
 ;; Interactive Menu
 ;; ──────────────────────────────────────────────────────────────
 
-(transient-define-suffix ansible-vault--menu--ansible-cfg-path ()
+(transient-define-suffix ansible-vault--menu--ansible-cfg--set-path (filename)
   "Set ansible.cfg path."
   :transient t
-  :description (lambda () (format "Current ansible.cfg path:\t\t%s"
+  :description (lambda () (format "ansible.cfg:     %s"
                                   (or (ansible-vault--get-state :ansible-cfg :path) "-")))
+  (interactive "fansbile.cfg path: ")
+  (when (and filename (not (file-exists-p filename)))
+    (user-error "File not found: %s" filename))
+  (ansible-vault--set-state :ansible-cfg :path filename)
+  (ansible-vault--ansible-cfg--init-crypto-options)
+  (transient--show))
+
+(transient-define-suffix ansible-vault--menu--header-options--switch-version ()
+  "Toggle header-options between `password-file' (v`1.1') and `vault-id'(v`1.2')."
+  :transient t
+  :description (lambda () (format "Encryption type: %s"
+                                  (pcase (ansible-vault--get-state :buffer :header-options :version)
+                                    ("1.1" "password-file")
+                                    ("1.2" "vault-id")
+                                    (_ "none"))))
   (interactive)
-  (let* ((current (ansible-vault--get-state :ansible-cfg :path))
-         (default-dir (if current (file-name-directory current) default-directory))
-         (new-path (read-file-name "ansible.cfg path: "
-                                   default-dir
-                                   nil
-                                   'confirm
-                                   "ansible.cfg")))
-    (when (and new-path (not (file-exists-p new-path)))
-      (user-error "File does not exist: %s" new-path))
-    (ansible-vault--set-state :ansible-cfg :path new-path)
-    (ansible-vault--ansible-cfg--init-crypto-options)
-    (transient--show)))
+  (let ((ver (pcase (ansible-vault--get-state :buffer :header-options :version)
+               ("1.1" "1.2")
+               ("1.2" "1.1")
+               (_     "1.1"))))
+    (ansible-vault--set-state :buffer :header-options :version ver)))
 
 (transient-define-prefix ansible-vault--menu ()
   "Control panel for `ansible-vault-mode'."
-  ["Actions"
-   ("d" "Decrypt buffer" ansible-vault-decrypt-current-buffer)
-   ("e" "Encrypt buffer" ansible-vault-encrypt-current-buffer)]
-  ["State"
-   ("-c" ansible-vault--menu--ansible-cfg-path)]
-  )
+  [
+   ["Actions"
+    ("d" "Decrypt buffer" ansible-vault-decrypt-current-buffer)
+    ("e" "Encrypt buffer" ansible-vault-encrypt-current-buffer)]
+   ["Options"
+    ("-c" ansible-vault--menu--ansible-cfg--set-path)
+    ("-v" ansible-vault--menu--header-options--switch-version)
+    ]
+   ])
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Keymap
