@@ -312,17 +312,17 @@ KEYS-AND-NEWVAL is a list of KEYS plus NEWVAL in the last element of."
     (ansible-vault--set-state :buffer :encrypted nil)))
     
 (defun ansible-vault--buffer--encrypt ()
-  (if (buffer-modified-p)
-      (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
+  (pcase (and (not (buffer-modified-p)) ansible-vault--encrypted-content t)
+    (`t (erase-buffer)
+        (insert ansible-vault--encrypted-content)
+        (set-buffer-modified-p nil))
+    (`nil (let* ((crypto-options (ansible-vault--get-state :ansible-cfg :crypto-options))
              (header-options (ansible-vault--get-state :buffer :header-options))
              (encrypted-str (ansible-vault--run :encrypt crypto-options header-options
                                                 (ansible-vault--buffer--to-string))))
         (erase-buffer)
         (insert encrypted-str)
-        (set-buffer-modified-p nil))
-    (erase-buffer)
-    (insert ansible-vault--encrypted-content)
-    (set-buffer-modified-p nil))
+        (set-buffer-modified-p nil))))
   (ansible-vault--set-state :buffer :encrypted t))
 
 ;; ──────────────────────────────────────────────────────────────
