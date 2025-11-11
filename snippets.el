@@ -54,7 +54,7 @@
 ;; 1) to watch diffs -- maybe there're other options
 ;; 2) to revert hunks -- mandatory
 
-;; TODO: add inline ansible-vault snippets support
+;; TODO: add inline ansible-vault snippets support (markers + overlays)
 
 ;; TODO: add rekey functionality
 
