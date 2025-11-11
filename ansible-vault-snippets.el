@@ -251,9 +251,7 @@ to find any ansible.cfg file to use.")
      ;; default constructor fallback
      (t (apply #'make-ehdr-orig plist)))))
 
-;; (ansible-vault--with-local-aliases
-;;   (let ((ehdr (make-ehdr :parse-string "$ANSIBLE_VAULT;1.2;AES256;dev")))
-;;     ehdr))
+
 
 ;; vault-id-alist
 
@@ -295,24 +293,24 @@ to find any ansible.cfg file to use.")
         ((and ansible-cfg-path
               (guard (stringp ansible-cfg-path))
               (guard (file-readable-p ansible-cfg-path)))
-         (let* ((ansible-cfg-path )
-                (ansible-cfg-content (with-temp-buffer (insert-file-contents file) (buffer-string))))
+         (let ((ansible-cfg-content (with-temp-buffer (insert-file-contents ansible-cfg-path) (buffer-string))))
            (cl-flet ((parse-key (key)
                        (let ((rx (rx line-start (literal key) (zero-or-more blank) "=" (zero-or-more blank)
                                      (group-n 1 (minimal-match (one-or-more not-newline)))
                                      (zero-or-more blank) (zero-or-more ";" (zero-or-more not-newline)) line-end)))
                          (when (string-match rx ansible-cfg-content)
                            (match-string 1 ansible-cfg-content)))))
-             (make-avo :ansible-cfg-path ansible-cfg-path
-                       :password-file (parse-key "vault_password_file")
-                       :default-enc-vault-id (parse-key "vault_encrypt_identity")
-                       :default-vault-id (parse-key "vault_identity")
-                       :vault-id-alist (make-vault-id-alist :parse-string (parse-key "vault_identity_list")
-                                                            :basedir (f-dirname ansible-cfg-path))))))
+             (make-avo-orig :ansible-cfg-path ansible-cfg-path
+                            :default-enc-vault-id (parse-key "vault_encrypt_identity")
+                            :default-vault-id (parse-key "vault_identity")
+                            :password-file (expand-file-name (parse-key "vault_password_file")
+                                                             (f-dirname ansible-cfg-path))
+                            :vault-id-alist (make-vault-id-alist :parse-string (parse-key "vault_identity_list")
+                                                                 :basedir (f-dirname ansible-cfg-path))))))
         (`nil (make-avo))))
      ;; by current buffer
      ((plist-member plist :by-current-buffer)
-      (make-avo :ansible-cfg (avo-locate-ansible-cfg)))
+      (make-avo :ansible-cfg-path (avo-locate-ansible-cfg)))
      ;; default fallback
      (t (apply #'make-avo-orig plist)))))
                                                          
