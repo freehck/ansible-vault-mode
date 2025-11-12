@@ -62,3 +62,24 @@
         (should (equal (a-get (avo-vault-id-alist avo) "dev") (f-full "general/.vault-id-pass-dev")))
         (should (equal (a-get (avo-vault-id-alist avo) "prod") (f-full "general/.vault-id-pass-prod")))))))
     
+(ert-deftest structure:eblk ()
+  (ansible-vault--with-local-aliases
+    (with-temp-buffer
+      ;; emulate file open procedure w/o enabling any modes
+      (setq buffer-file-name (f-full "snippets/snippets.yaml"))
+      (insert-file-contents "snippets/snippets.yaml")
+      (set-buffer-modified-p nil)
+      ;; test
+      (let ((eblks (ansible-vault--eblk-find-all-in-buffer)))
+        (should (equal (length eblks) 3))
+        (let ((eblk-1 (nth 0 eblks))
+              (eblk-2 (nth 1 eblks))
+              (eblk-3 (nth 2 eblks)))
+          (should (equal (marker-position (eblk-marker-start eblk-1))   49))
+          (should (equal (marker-position (eblk-marker-end   eblk-1))   424))
+          (should (equal (marker-position (eblk-marker-start eblk-2))   444))
+          (should (equal (marker-position (eblk-marker-end   eblk-2))   823))
+          (should (equal (marker-position (eblk-marker-start eblk-3))   844))
+          (should (equal (marker-position (eblk-marker-end   eblk-3))   1224)))))))
+
+;;(ert-deftest file:snippets.yaml ()

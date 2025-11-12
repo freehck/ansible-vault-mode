@@ -136,13 +136,25 @@ We use it because in order to ensure ansible-vault binary won't be able
 to find any ansible.cfg file to use.")
 
 ;; ──────────────────────────────────────────────────────────────
+;; Misc Useful Functions
+;; ──────────────────────────────────────────────────────────────
+
+(defun ansible-vault--first-line (str)
+  "Return the first line of multiline string STR (without a newline)."
+  (if (string-match "\n" str)
+      (substring str 0 (match-beginning 0))
+    str))
+
+;; ──────────────────────────────────────────────────────────────
 ;; Local Namespacing Hack
 ;; ──────────────────────────────────────────────────────────────
 
 ;; plus maybe eval-when-compile
 
 (defconst ansible-vault--local-aliases
-  '(;; ehdr
+  '(;; misc
+    (first-line . ansible-vault--first-line)
+    ;; ehdr
     (make-ehdr-orig . make-ansible-vault--ehdr)
     (make-ehdr . ansible-vault--make-ehdr)
     (ehdr-cipher-algorithm . ansible-vault--ehdr-cipher-algorithm)
@@ -165,11 +177,15 @@ to find any ansible.cfg file to use.")
     (avo-p . ansible-vault--avo-p)
     (avo-locate-ansible-cfg . ansible-vault--avo-locate-ansible-cfg)
     ;; eblk
+    (eblk-regex . ansible-vault--eblk-regex)
+    (eblk-find-all-in-buffer . ansible-vault--eblk-find-all-in-buffer)
     (make-eblk-orig . make-ansible-vault--eblk)
     (make-eblk . ansible-vault--make-eblk)
-    (eblk-market-start . ansible-vault--eblk-market-start)
-    (eblk-market-end . ansible-vault--eblk-market-end)
+    (eblk-marker-start . ansible-vault--eblk-marker-start)
+    (eblk-marker-end . ansible-vault--eblk-marker-end)
     (eblk-ehdr . ansible-vault--eblk-ehdr)
+    (eblk-content . ansible-vault--eblk-content)
+    (eblk-enc-content . ansible-vault--eblk-enc-content)
     (eblk-p . ansible-vault--eblk-p)
     )
   "Just a shortcuts for all the functions in `ansible-vault'.")
@@ -328,9 +344,50 @@ to find any ansible.cfg file to use.")
 ;; eblk: Encrypted Blocks
 (cl-defstruct ansible-vault--eblk
   "Encrypted Blocks (eblk)."
-  market-start market-end ehdr)
+  marker-start marker-end ehdr content enc-content)
 
+(defun ansible-vault--make-eblk (&rest plist)
+  "Constructor eblk."
+  (ansible-vault--with-local-aliases
+    (cond
+     ((and (plist-member plist :marker-start)
+           (plist-member plist :marker-end)
+           (plist-member plist :enc-content))
+      (let ((enc-content (plist-get plist :enc-content)))
+        (make-eblk-orig :marker-start (plist-get plist :marker-start)
+                        :marker-end (plist-get plist :marker-end)
+                        :enc-content enc-content
+                        :ehdr (make-ehdr :parse-string (first-line enc-content)))))
+     (t (apply #'make-eblk-orig plist)))))
 
+(defconst ansible-vault--eblk-regex
+  (rx
+   "!vault" (+ space) "|" (or "\n" "\r\n")
+   (group (* space))
+   (group (+ nonl) (or "\n" "\r\n")
+          (* (seq (backref 1) (+ nonl) (or "\n" "\r\n")))
+          (backref 1) (+ nonl)))
+  "Return regex to match entire !vault | block with consistent indent.")
+
+(defun ansible-vault--eblk-find-all-in-buffer ()
+  "Find all eblk's."
+  (ansible-vault--with-local-aliases
+    (save-excursion
+      (widen)
+      (goto-char (point-min))
+      (let ((eblks '()))
+        (while (re-search-forward eblk-regex nil t)
+          (when-let* ((start (match-beginning 0))
+                      (end (match-end 0))
+                      (indent (match-string 1))
+                      (bare-content (match-string 2)))
+            ;;(push (list start end) eblks)
+            (push (make-eblk :marker-start (copy-marker start)
+                             :marker-end (copy-marker end)
+                             :enc-content (replace-regexp-in-string (rx line-start (literal indent)) "" bare-content))
+                  eblks)
+            ))
+        (nreverse eblks)))))
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Misc

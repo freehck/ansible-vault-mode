@@ -3,9 +3,7 @@
 # ANSIBLE_LOAD_CALLBACK_PLUGINS=true ANSIBLE_STDOUT_CALLBACK=json ansible localhost -e @snippets.yaml -m debug -a "msg={{ decrypted }}" | jq -r '.plays[0].tasks[0].hosts.localhost.msg'
 
 decrypted:
-  creds:
-    user: "my-service-user"
-    pass: "my-secret-password"
+  creds: "user@password"
 
 encrypted_11: !vault |
   $ANSIBLE_VAULT;1.1;AES256
@@ -39,5 +37,3 @@ encrypted_12_prod: !vault |
   64306464326537336333616634313139343334383332663936633639316366613334663339373035
   64326637343431303263343235373435663866383037633037306262613336663363323462623334
   35646666626433353939
-
-...
