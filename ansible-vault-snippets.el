@@ -181,12 +181,11 @@ to find any ansible.cfg file to use.")
     (eblk-find-all-in-buffer . ansible-vault--eblk-find-all-in-buffer)
     (make-eblk-orig . make-ansible-vault--eblk)
     (make-eblk . ansible-vault--make-eblk)
-    (eblk-marker-start . ansible-vault--eblk-marker-start)
-    (eblk-marker-end . ansible-vault--eblk-marker-end)
+    (eblk-overlay . ansible-vault--eblk-overlay)
     (eblk-ehdr . ansible-vault--eblk-ehdr)
-    (eblk-content . ansible-vault--eblk-content)
-    (eblk-enc-content . ansible-vault--eblk-enc-content)
+    (eblk-last-saved-content . ansible-vault--eblk-last-saved-content)
     (eblk-p . ansible-vault--eblk-p)
+    (eblk-enc-content . ansible-vault--eblk-enc-content)
     )
   "Just a shortcuts for all the functions in `ansible-vault'.")
 
@@ -342,22 +341,39 @@ to find any ansible.cfg file to use.")
       (cl-first valid-sources))))
 
 ;; eblk: Encrypted Blocks
+
 (cl-defstruct ansible-vault--eblk
   "Encrypted Blocks (eblk)."
-  marker-start marker-end ehdr content enc-content)
+  overlay ehdr last-saved-content)
+
+(defun ansible-vault--overlay-original-text (overlay)
+  "Return the original buffer text covered by OVERLAY.
+This is the text that is *hidden* by the overlay's `display' property."
+  (when (and overlay (overlay-buffer overlay))
+    (let ((start (overlay-start overlay))
+          (end (overlay-end overlay)))
+      (buffer-substring-no-properties start end))))
+
+(defun ansible-vault--eblk-enc-content (eblk)
+  "Return eblk content hidden by eblk overlay."
+  (ansible-vault--with-local-aliases
+    (let ((ov (eblk-overlay eblk)))
+      (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))))
 
 (defun ansible-vault--make-eblk (&rest plist)
   "Constructor eblk."
   (ansible-vault--with-local-aliases
     (cond
-     ((and (plist-member plist :marker-start)
-           (plist-member plist :marker-end)
-           (plist-member plist :enc-content))
-      (let ((enc-content (plist-get plist :enc-content)))
-        (make-eblk-orig :marker-start (plist-get plist :marker-start)
-                        :marker-end (plist-get plist :marker-end)
-                        :enc-content enc-content
-                        :ehdr (make-ehdr :parse-string (first-line enc-content)))))
+     ((and (plist-member plist :start)
+           (plist-member plist :end))
+      (let ((eblk (make-eblk-orig :overlay (make-overlay (copy-marker (plist-get plist :start))
+                                                         (copy-marker (plist-get plist :end))))))
+        (when-let* ((enc-content (eblk-enc-content eblk))
+                    (enc-content (and (string-match eblk-regex enc-content)
+                                      (match-string 2 enc-content))))
+          (setf (eblk-ehdr eblk)
+                (make-ehdr :parse-string (first-line enc-content))))
+        eblk))
      (t (apply #'make-eblk-orig plist)))))
 
 (defconst ansible-vault--eblk-regex
@@ -378,16 +394,12 @@ to find any ansible.cfg file to use.")
       (let ((eblks '()))
         (while (re-search-forward eblk-regex nil t)
           (when-let* ((start (match-beginning 0))
-                      (end (match-end 0))
-                      (indent (match-string 1))
-                      (bare-content (match-string 2)))
-            ;;(push (list start end) eblks)
-            (push (make-eblk :marker-start (copy-marker start)
-                             :marker-end (copy-marker end)
-                             :enc-content (replace-regexp-in-string (rx line-start (literal indent)) "" bare-content))
-                  eblks)
-            ))
+                      (end (match-end 0)))
+            ;;(push (list start end) eblks) ; for debug purposes
+            (push (make-eblk :start start :end end) eblks)))
         (nreverse eblks)))))
+
+
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Misc
