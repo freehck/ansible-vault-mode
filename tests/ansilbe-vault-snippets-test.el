@@ -89,4 +89,50 @@
           ))))
   )
 
+(ert-deftest cli:gen-shell-command:password-file ()
+  (ansible-vault--with-local-aliases
+    (with-temp-buffer
+      ;; emulate file open procedure w/o enabling any modes
+      (setq buffer-file-name (f-full "general/encrypted-1.1.yaml"))
+      (insert-file-contents "general/encrypted-1.1.yaml")
+      (set-buffer-modified-p nil)
+      ;; test
+      (let ((avo (make-avo :by-current-buffer))
+            (ehdr (make-ehdr :parse-string (first-line (buffer-string)))))
+        (should (equal (gen-shell-command :decrypt avo ehdr)
+                       (concat "ansible-vault decrypt --output=- --vault-password-file"
+                               " " (f-full "general/.vault-pass"))))
+        (should (equal (gen-shell-command :encrypt avo ehdr)
+                       (concat "ansible-vault encrypt --output=- --vault-password-file"
+                               " " (f-full "general/.vault-pass"))))))))
+
+(ert-deftest cli:gen-shell-command:vault-id:dev ()
+  (ansible-vault--with-local-aliases
+    (with-temp-buffer
+      ;; emulate file open procedure w/o enabling any modes
+      (setq buffer-file-name (f-full "general/encrypted-1.2-dev.yaml"))
+      (insert-file-contents "general/encrypted-1.2-dev.yaml")
+      (set-buffer-modified-p nil)
+      ;; test
+      (let ((avo (make-avo :by-current-buffer))
+            (ehdr (make-ehdr :parse-string (first-line (buffer-string)))))
+        (should (equal (gen-shell-command :decrypt avo ehdr)
+                       (concat "ansible-vault decrypt --output=-"
+                               " --vault-id dev@" (f-full "general/.vault-id-pass-dev")
+                               " --vault-id prod@" (f-full "general/.vault-id-pass-prod"))))
+        (should (equal (gen-shell-command :encrypt avo ehdr)
+                       (concat "ansible-vault encrypt --output=-"
+                               " --encrypt-vault-id dev"
+                               " --vault-id dev@" (f-full "general/.vault-id-pass-dev"))))))))
+  
+
 ;;(ert-deftest file:snippets.yaml ()
+;;  (ansible-vault--with-local-aliases
+;;    (with-temp-buffer
+;;      ;; emulate file open procedure w/o enabling any modes
+;;      (setq buffer-file-name (f-full "snippets/snippets.yaml"))
+;;      (insert-file-contents "snippets/snippets.yaml")
+;;      (set-buffer-modified-p nil)
+;;      ;; test
+;;      (let ((eblks (ansible-vault--eblk-find-all-in-buffer))
+;;            (avo (make-avo :by-current-buffer)))

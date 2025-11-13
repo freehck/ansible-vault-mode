@@ -186,6 +186,8 @@ to find any ansible.cfg file to use.")
     (eblk-last-saved-content . ansible-vault--eblk-last-saved-content)
     (eblk-p . ansible-vault--eblk-p)
     (eblk-enc-content . ansible-vault--eblk-enc-content)
+    ;; shell
+    (gen-shell-command . ansible-vault--gen-shell-command)
     )
   "Just a shortcuts for all the functions in `ansible-vault'.")
 
@@ -414,6 +416,54 @@ This is the text that is *hidden* by the overlay's `display' property."
         (with-current-buffer buffer)
           (setq-local buffer-read-only t)
         buffer)))
+
+;; ──────────────────────────────────────────────────────────────
+;; Shell
+;; ──────────────────────────────────────────────────────────────
+
+(defun ansible-vault--gen-shell-command (action avo ehdr)
+  (ansible-vault--with-local-aliases
+    (let ((command (list ansible-vault-command)))
+      (cl-flet ((cpush (elt) (push elt command)))
+      (pcase action
+        (:decrypt
+         (cpush "decrypt")
+         (cpush "--output=-")
+         (pcase (ehdr-vault-type ehdr)
+           ('password-file (pcase (avo-password-file avo)
+                             (`nil (error "Unknown vault-password-file"))
+                             (val  (cpush "--vault-password-file")
+                                   (cpush val))))
+           ('vault-id      (pcase (avo-vault-id-alist avo)
+                             (`nil (error "Unknown vault-identity-list"))
+                             (vidl (cl-loop for (id . file) in vidl
+                                            do (progn (cpush "--vault-id")
+                                                      (cpush (concat id "@" file)))))))
+           (ver            (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
+        (:encrypt
+         (cpush "encrypt")
+         (cpush "--output=-")
+         (pcase (ehdr-vault-type ehdr)
+           ('password-file (pcase (avo-password-file avo)
+                             (`nil (error "Unknown vault-password-file"))
+                             (val  (cpush "--vault-password-file")
+                                   (cpush val))))
+           ('vault-id      (let ((enc-id (or (ehdr-vault-id ehdr)
+                                             (avo-default-enc-vault-id avo))))
+                             (unless enc-id
+                               (error "Undefined vault-encrypt-identity"))
+                             (cpush "--encrypt-vault-id")
+                             (cpush enc-id)
+                             (pcase (avo-vault-id-alist avo)
+                               (`nil (error "Unknown vault-identity-list"))
+                               (vidl (cl-loop for (id . file) in vidl
+                                              when (equal id enc-id)
+                                              do (progn (cpush "--vault-id")
+                                                        (cpush (concat id "@" file))))))))
+           (ver (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
+        (_ (error (format "Unknown action: %s" action))))
+      (mapconcat #'identity (reverse command) " ")))))
+
 
 
 
