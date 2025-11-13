@@ -464,7 +464,42 @@ This is the text that is *hidden* by the overlay's `display' property."
         (_ (error (format "Unknown action: %s" action))))
       (mapconcat #'identity (reverse command) " ")))))
 
-
-
+(defun ansible-vault--run (action avo ehdr str)
+  ""
+  (ansible-vault--with-local-aliases
+    (let ((command (gen-shell-command action avo ehdr))
+          (cmd-buf-stdout (generate-new-buffer "ansible-vault-cmd-stdout"))
+          (cmd-buf-stderr (generate-new-buffer "ansible-vault-cmd-stderr"))
+          (env-ansible-vault-password-file (getenv "ANSIBLE_VAULT_PASSWORD_FILE")))
+      (unless (f-directory-p ansible-vault--tempdir)
+        (make-directory ansible-vault--tempdir))
+      (unwind-protect
+          (pcase (unwind-protect
+                     (progn
+                       (when env-ansible-vault-password-file
+                         (setenv "ANSIBLE_VAULT_PASSWORD_FILE" nil))
+                       (with-temp-buffer
+                         (insert str)
+                         (let ((inhibit-message t) ; disable output to *Messages* from elisp `message' function
+                               (message-log-max nil) ; disable output to *Messages* from c-code
+                               (default-directory ansible-vault--tempdir))
+                           (shell-command-on-region (point-min) (point-max)
+                                                    command
+                                                    cmd-buf-stdout nil
+                                                    cmd-buf-stderr nil)
+                           )))
+                   (when env-ansible-vault-password-file
+                     (setenv "ANSIBLE_VAULT_PASSWORD_FILE" env-ansible-vault-password-file)))
+            (0 (with-current-buffer cmd-buf-stdout
+                 (buffer-string)))
+            (_ (progn
+                 (switch-to-buffer (ansible-vault--get-or-create-error-buffer))
+                 (goto-char (point-max))
+                 (insert "$ " command "\n")
+                 (insert-buffer-substring cmd-buf-stderr)
+                 (insert "\n"))))
+        (kill-buffer cmd-buf-stdout)
+        (kill-buffer cmd-buf-stderr)
+        ))))
 
 ;;;;;;

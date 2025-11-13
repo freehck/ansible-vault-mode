@@ -124,7 +124,36 @@
                        (concat "ansible-vault encrypt --output=-"
                                " --encrypt-vault-id dev"
                                " --vault-id dev@" (f-full "general/.vault-id-pass-dev"))))))))
-  
+
+(ert-deftest cli:run:password-file ()
+  (ansible-vault--with-local-aliases
+    (with-temp-buffer
+      ;; emulate file open procedure w/o enabling any modes
+      (setq buffer-file-name (f-full "snippets/encrypted-1.1"))
+      (insert-file-contents "snippets/encrypted-1.1")
+      (set-buffer-modified-p nil)
+      ;; test
+      (let ((avo (make-avo :by-current-buffer))
+            (ehdr (make-ehdr :parse-string (first-line (buffer-string)))))
+        (cl-flet ((decrypt (apply-partially #'ansible-vault--run :decrypt avo ehdr))
+                  (encrypt (apply-partially #'ansible-vault--run :encrypt avo ehdr)))
+          (should (equal (first-line (decrypt (buffer-string)))                     "user@password"))
+          (should (equal (first-line (decrypt (encrypt (decrypt (buffer-string))))) "user@password")))))))
+
+(ert-deftest cli:run:vault-id:dev ()
+  (ansible-vault--with-local-aliases
+    (with-temp-buffer
+      ;; emulate file open procedure w/o enabling any modes
+      (setq buffer-file-name (f-full "snippets/encrypted-1.2-dev"))
+      (insert-file-contents "snippets/encrypted-1.2-dev")
+      (set-buffer-modified-p nil)
+      ;; test
+      (let ((avo (make-avo :by-current-buffer))
+            (ehdr (make-ehdr :parse-string (first-line (buffer-string)))))
+        (cl-flet ((decrypt (apply-partially #'ansible-vault--run :decrypt avo ehdr))
+                  (encrypt (apply-partially #'ansible-vault--run :encrypt avo ehdr)))
+          (should (equal (first-line (decrypt (buffer-string)))                     "user@password"))
+          (should (equal (first-line (decrypt (encrypt (decrypt (buffer-string))))) "user@password")))))))                       
 
 ;;(ert-deftest file:snippets.yaml ()
 ;;  (ansible-vault--with-local-aliases
