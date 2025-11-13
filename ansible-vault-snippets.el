@@ -185,9 +185,13 @@ to find any ansible.cfg file to use.")
     (eblk-ehdr . ansible-vault--eblk-ehdr)
     (eblk-last-saved-content . ansible-vault--eblk-last-saved-content)
     (eblk-p . ansible-vault--eblk-p)
+    (eblk-overlay-content . ansible-vault--eblk-overlay-content)
     (eblk-enc-content . ansible-vault--eblk-enc-content)
+    (eblk-decypt . ansible-vault--eblk-decrypt)
     ;; shell
     (gen-shell-command . ansible-vault--gen-shell-command)
+    (av-decrypt . ansible-vault--decrypt)
+    (av-encrypt . ansible-vault--encrypt)
     )
   "Just a shortcuts for all the functions in `ansible-vault'.")
 
@@ -350,19 +354,31 @@ to find any ansible.cfg file to use.")
   "Encrypted Blocks (eblk)."
   overlay ehdr last-saved-content)
 
-(defun ansible-vault--overlay-original-text (overlay)
-  "Return the original buffer text covered by OVERLAY.
-This is the text that is *hidden* by the overlay's `display' property."
-  (when (and overlay (overlay-buffer overlay))
-    (let ((start (overlay-start overlay))
-          (end (overlay-end overlay)))
-      (buffer-substring-no-properties start end))))
-
-(defun ansible-vault--eblk-enc-content (eblk)
-  "Return eblk content hidden by eblk overlay."
+(defun ansible-vault--eblk-overlay-content (eblk)
+  "Return all text hidden by eblk overlay."
   (ansible-vault--with-local-aliases
     (let ((ov (eblk-overlay eblk)))
       (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))))
+
+(defun ansible-vault--eblk-enc-content (eblk)
+  "Return ansible-vault encrypted text hidden by eblk overlay."
+  (ansible-vault--with-local-aliases
+    (when-let* ((ovc (eblk-overlay-content eblk))
+                (_ (string-match eblk-regex ovc))
+                (indent (match-string 1 ovc))
+                (ec-orig (match-string 2 ovc))
+                (ec (replace-regexp-in-string (rx line-start (literal indent)) "" ec-orig)))
+      ec)))
+
+(defface ansible-vault--eblk-content-face
+  '((t :background "dark slate grey"))
+  "Decrypted and clean."
+  :group 'ansible-vault)
+
+(defface ansible-vault--eblk-header-face
+  '((t :background "red4"))
+  "Decrypted and clean."
+  :group 'ansible-vault)
 
 (defun ansible-vault--make-eblk (&rest plist)
   "Constructor eblk."
@@ -372,9 +388,10 @@ This is the text that is *hidden* by the overlay's `display' property."
            (plist-member plist :end))
       (let ((eblk (make-eblk-orig :overlay (make-overlay (copy-marker (plist-get plist :start))
                                                          (copy-marker (plist-get plist :end))))))
-        (when-let* ((enc-content (eblk-enc-content eblk))
-                    (enc-content (and (string-match eblk-regex enc-content)
-                                      (match-string 2 enc-content))))
+        (overlay-put (eblk-overlay eblk) 'face 'ansible-vault--eblk-content-face)
+        (overlay-put (eblk-overlay eblk) 'before-string
+             (propertize "ansible-vault encrypted block\n" 'face 'ansible-vault--eblk-header-face))
+        (when-let ((enc-content (eblk-enc-content eblk)))
           (setf (eblk-ehdr eblk)
                 (make-ehdr :parse-string (first-line enc-content))))
         eblk))
@@ -403,7 +420,20 @@ This is the text that is *hidden* by the overlay's `display' property."
             (push (make-eblk :start start :end end) eblks)))
         (nreverse eblks)))))
 
+(defun ansible-vault--eblk-decrypt (eblk avo)
+  "Decrypt eblk."
+  (ansible-vault--with-local-aliases
+    (let* ((ov (eblk-overlay eblk))
+           (ehdr (eblk-ehdr eblk))
+           (enc-content (eblk-enc-content eblk))
+           (content (av-decrypt avo ehdr enc-content)))
+      (progn
+        (overlay-put ov 'display content)
+        (setf (eblk-last-saved-content eblk) content)
+        (overlay-put ov 'face nil)
+        (overlay-put ov 'modified nil)))))
 
+  
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Misc
@@ -464,6 +494,8 @@ This is the text that is *hidden* by the overlay's `display' property."
         (_ (error (format "Unknown action: %s" action))))
       (mapconcat #'identity (reverse command) " ")))))
 
+;; TODO: probably it'll be sane to return some structure indicating status: okay or error
+;; it would be useful to indicate errors while decrypting/encrypting eblks
 (defun ansible-vault--run (action avo ehdr str)
   ""
   (ansible-vault--with-local-aliases
@@ -501,5 +533,12 @@ This is the text that is *hidden* by the overlay's `display' property."
         (kill-buffer cmd-buf-stdout)
         (kill-buffer cmd-buf-stderr)
         ))))
+
+(defalias 'ansible-vault--decrypt (apply-partially #'ansible-vault--run :decrypt))
+(defalias 'ansible-vault--encrypt (apply-partially #'ansible-vault--run :encrypt))
+
+
+
+
 
 ;;;;;;

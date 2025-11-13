@@ -27,3 +27,15 @@ encrypted_12_prod: !vault |
   3937
 
 ...
+(setq-local eblks (ansible-vault--eblk-find-all-in-buffer))
+
+(ansible-vault--with-local-aliases
+  (let ((avo (make-avo :by-current-buffer)))
+    (let ((eblk-1 (nth 0 eblks)))
+      ;;(av-decrypt avo (eblk-ehdr eblk-1) (eblk-enc-content eblk-1))
+      ;;(ansible-vault--eblk-decrypt eblk-1 avo)
+      nil
+      )))
+
+(overlays-in (point-min) (point-max))
+(overlay-get (ansible-vault--eblk-overlay (nth 0 eblks)) 'display)

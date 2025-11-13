@@ -153,9 +153,9 @@
         (cl-flet ((decrypt (apply-partially #'ansible-vault--run :decrypt avo ehdr))
                   (encrypt (apply-partially #'ansible-vault--run :encrypt avo ehdr)))
           (should (equal (first-line (decrypt (buffer-string)))                     "user@password"))
-          (should (equal (first-line (decrypt (encrypt (decrypt (buffer-string))))) "user@password")))))))                       
+          (should (equal (first-line (decrypt (encrypt (decrypt (buffer-string))))) "user@password")))))))
 
-;;(ert-deftest file:snippets.yaml ()
+;;(ert-deftest structure:eblk:decrypt ()
 ;;  (ansible-vault--with-local-aliases
 ;;    (with-temp-buffer
 ;;      ;; emulate file open procedure w/o enabling any modes
@@ -165,3 +165,9 @@
 ;;      ;; test
 ;;      (let ((eblks (ansible-vault--eblk-find-all-in-buffer))
 ;;            (avo (make-avo :by-current-buffer)))
+;;        (should (equal (length eblks) 3))
+;;        (let ((eblk-1 (nth 0 eblks))
+;;              (eblk-2 (nth 1 eblks))
+;;              (eblk-3 (nth 2 eblks)))
+;;          (av-decrypt eblk)
+;;
