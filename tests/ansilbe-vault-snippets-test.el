@@ -6,6 +6,11 @@
   (should (equal
            (macroexpand-all
             '(ansible-vault--with-local-aliases
+               (1 . 2)))
+           '(progn (1 . 2))))
+  (should (equal
+           (macroexpand-all
+            '(ansible-vault--with-local-aliases
                (let ((ehdr (make-ehdr :parse-string "$ANSIBLE_VAULT;1.2;AES256;dev")))
                  ehdr)))
            '(progn
