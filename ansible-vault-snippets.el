@@ -124,16 +124,50 @@ function instead."
   :type 'boolean
   :group 'ansible-vault)
 
+(defcustom ansible-vault-mode-eblk-header-text "AV Enc"
+  "Text of an ansible-vault in-line encrypted block overlay header."
+  :type 'string
+  :group 'ansible-vault)
+
 ;; ──────────────────────────────────────────────────────────────
 ;; Internal variables
 ;; ──────────────────────────────────────────────────────────────
-
 
 (defvar ansible-vault--tempdir (expand-file-name "emacs-ansible-vault-mode" temporary-file-directory)
   "Temporary clean directory to run ansible-vault binary in.
 
 We use it because in order to ensure ansible-vault binary won't be able
 to find any ansible.cfg file to use.")
+
+;; ──────────────────────────────────────────────────────────────
+;; Local variables
+;; ──────────────────────────────────────────────────────────────
+
+(defvar ansible-vault--state '()
+  "Permanent local variable to keep the `ansible-vault-mode' state.
+
+Its value is OBJ where (`ansible-vault--state-p' OBJ) evaluates to t.")
+(make-variable-buffer-local 'ansible-vault--state)
+(put 'ansible-vault--state 'permanent-local t)
+
+;; ──────────────────────────────────────────────────────────────
+;; Faces
+;; ──────────────────────────────────────────────────────────────
+
+(defface ansible-vault--eblk-content-face
+  '((t :background "dark slate grey"))
+  "In-line encrypted block overlay content face."
+  :group 'ansible-vault)
+
+(defface ansible-vault--eblk-header-face
+  '((t :background "red4"))
+  "In-line encrypted block overlay header face."
+  :group 'ansible-vault)
+
+(defface ansible-vault--buffer-header-face
+  '((t :background "red4"))
+  "Buffer overlay header face."
+  :group 'ansible-vault)
 
 ;; ──────────────────────────────────────────────────────────────
 ;; Misc Useful Functions
@@ -154,6 +188,12 @@ to find any ansible.cfg file to use.")
 (defconst ansible-vault--local-aliases
   '(;; misc
     (first-line . ansible-vault--first-line)
+    (with-temp-env . ansible-vault--with-temp-env)
+    ;; shell
+    (gen-shell-command . ansible-vault--gen-shell-command)
+    (av-run . ansible-vault--run)
+    (av-decrypt . ansible-vault--decrypt)
+    (av-encrypt . ansible-vault--encrypt)
     ;; ehdr
     (make-ehdr-orig . make-ansible-vault--ehdr)
     (make-ehdr . ansible-vault--make-ehdr)
@@ -176,18 +216,29 @@ to find any ansible.cfg file to use.")
     (avo-default-vault-id . ansible-vault--avo-default-vault-id)
     (avo-p . ansible-vault--avo-p)
     (avo-locate-ansible-cfg . ansible-vault--avo-locate-ansible-cfg)
-    ;; eblk
-    (eblk-regex . ansible-vault--eblk-regex)
-    (eblk-find-all-in-buffer . ansible-vault--eblk-find-all-in-buffer)
-    (make-eblk-orig . make-ansible-vault--eblk)
-    (make-eblk . ansible-vault--make-eblk)
-    (eblk-overlay . ansible-vault--eblk-overlay)
-    (eblk-ehdr . ansible-vault--eblk-ehdr)
-    (eblk-last-saved-content . ansible-vault--eblk-last-saved-content)
-    (eblk-p . ansible-vault--eblk-p)
-    (eblk-overlay-content . ansible-vault--eblk-overlay-content)
-    (eblk-enc-content . ansible-vault--eblk-enc-content)
-    (eblk-decypt . ansible-vault--eblk-decrypt)
+    ;; buffer
+    (buffer-encrypted-p . ansible-vault--buffer-encrypted-p)
+    (buffer-decrypt . ansible-vault--buffer-decrypt)
+    (whole-buffer-string . ansible-vault--whole-buffer-string)
+    ;; state
+    (make-state-orig . make-ansible-vault--state)
+    (make-state . ansible-vault--make-state)
+    (state-avo . ansible-vault--state-avo)
+    (state-overlays . ansible-vault--state-overlays)
+    (state-buffer-overlay . ansible-vault--state-buffer-overlay)
+    (state-p . ansible-vault--state-p)
+;;    ;; eblk
+;;    (eblk-regex . ansible-vault--eblk-regex)
+;;    (eblk-find-all-in-buffer . ansible-vault--eblk-find-all-in-buffer)
+;;    (make-eblk-orig . make-ansible-vault--eblk)
+;;    (make-eblk . ansible-vault--make-eblk)
+;;    (eblk-overlay . ansible-vault--eblk-overlay)
+;;    (eblk-ehdr . ansible-vault--eblk-ehdr)
+;;    (eblk-last-saved-content . ansible-vault--eblk-last-saved-content)
+;;    (eblk-p . ansible-vault--eblk-p)
+;;    (eblk-overlay-content . ansible-vault--eblk-overlay-content)
+;;    (eblk-enc-content . ansible-vault--eblk-enc-content)
+;;    (eblk-decypt . ansible-vault--eblk-decrypt)
     ;; shell
     (gen-shell-command . ansible-vault--gen-shell-command)
     (av-decrypt . ansible-vault--decrypt)
@@ -225,23 +276,156 @@ to find any ansible.cfg file to use.")
      ,@(mapcar #'ansible-vault--expand-local-aliases body)))
 
 ;; ──────────────────────────────────────────────────────────────
+;; Shell (how to run ansible-vault command)
+;; ──────────────────────────────────────────────────────────────
+
+(defun ansible-vault--gen-shell-command (action avo ehdr)
+  "Generates ansible-vault command to run.
+
+ACTION is either 'encrypt or 'decrypt.
+AVO is an `ansible-vault--avo' structure (ansible-vault options).
+EHDR is and `ansible-vault--ehdr' structure (ansible-vault encryption header).
+
+Return string you can pass to `shell-command-on-region'."
+  (ansible-vault--with-local-aliases
+    (let ((command (list ansible-vault-command)))
+      (cl-flet ((cpush (elt) (push elt command)))
+      (pcase action
+        ('decrypt
+         (cpush "decrypt")
+         (cpush "--output=-")
+         (pcase (ehdr-vault-type ehdr)
+           ('password-file (pcase (avo-password-file avo)
+                             (`nil (error "Unknown vault-password-file"))
+                             (val  (cpush "--vault-password-file")
+                                   (cpush val))))
+           ('vault-id      (pcase (avo-vault-id-alist avo)
+                             (`nil (error "Unknown vault-identity-list"))
+                             (vidl (cl-loop for (id . file) in vidl
+                                            do (progn (cpush "--vault-id")
+                                                      (cpush (concat id "@" file)))))))
+           (ver            (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
+        ('encrypt
+         (cpush "encrypt")
+         (cpush "--output=-")
+         (pcase (ehdr-vault-type ehdr)
+           ('password-file (pcase (avo-password-file avo)
+                             (`nil (error "Unknown vault-password-file"))
+                             (val  (cpush "--vault-password-file")
+                                   (cpush val))))
+           ('vault-id      (let ((enc-id (or (ehdr-vault-id ehdr)
+                                             (avo-default-enc-vault-id avo))))
+                             (unless enc-id
+                               (error "Undefined vault-encrypt-identity"))
+                             (cpush "--encrypt-vault-id")
+                             (cpush enc-id)
+                             (pcase (avo-vault-id-alist avo)
+                               (`nil (error "Unknown vault-identity-list"))
+                               (vidl (cl-loop for (id . file) in vidl
+                                              when (equal id enc-id)
+                                              do (progn (cpush "--vault-id")
+                                                        (cpush (concat id "@" file))))))))
+           (ver (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
+        (_ (error (format "Unknown action: %s" action))))
+      (mapconcat #'identity (reverse command) " ")))))
+
+(defmacro ansible-vault--with-temp-env (bindings &rest body)
+  "Execute BODY with temporarily modified environment variables.
+
+BINDINGS is a list of:
+  (VAR . VAL)  -> set VAR to VAL (VAL = nil -> remove)
+  VAR          -> remove VAR (equivalent to (VAR . nil))
+
+All changes are automatically restored on exit."
+  (declare (indent 1) (debug (sexp &rest form)))
+  (let ((saved-sym (gensym "--env-saved--"))
+        (bindings (cl-loop for item in bindings
+                           for var = (if (consp item) (car item) item)
+                           for val = (if (consp item) (cdr item) nil)
+                           collect (list 'cons var val))))
+    `(let ((,saved-sym (cl-loop for (var . new-val) in (list ,@bindings)
+                                collect (cons var (getenv var)))))
+       (unwind-protect
+           (progn
+             (cl-loop for (var . new-val) in (list ,@bindings)
+                      do (setenv var new-val))
+             ,@body)
+         (cl-loop for (var . old-val) in ,saved-sym
+                  do (setenv var old-val))))))
+
+(defun ansible-vault--run (action avo ehdr str)
+  "Run ansible-vault command (defined by `ansible-vault-command').
+
+ACTION is either 'encrypt or 'decrypt.
+AVO is an `ansible-vault--avo' structure (ansible-vault options).
+EHDR is and `ansible-vault--ehdr' structure (ansible-vault encryption header).
+
+STR can be a string to perform action on.
+STR cab be a cons: `(ok . STR)
+STR can be a cons: `(error . _)
+
+Returns `(ok . result-string) or `(error . error-string)."
+  (setq str (pcase str
+              (`(ok . ,str) str)
+              (`(error . ,str) error)
+              (str str)))
+  (ansible-vault--with-local-aliases
+    (unless (f-directory-p ansible-vault--tempdir)
+      (make-directory ansible-vault--tempdir))
+    (let ((command (gen-shell-command action avo ehdr))
+          (cmd-buf-stdout (generate-new-buffer "ansible-vault-cmd-stdout"))
+          (cmd-buf-stderr (generate-new-buffer "ansible-vault-cmd-stderr")))
+      (unwind-protect
+          (pcase
+              (with-temp-buffer
+                (insert str)
+                (let ((inhibit-message t) ; disable output to *Messages* from elisp `message' function
+                      (message-log-max nil) ; disable output to *Messages* from c-code
+                      (default-directory ansible-vault--tempdir))
+                  (ansible-vault--with-temp-env ("DEFAULT_VAULT_PASSWORD_FILE"    "ANSIBLE_VAULT_PASSWORD_FILE"
+                                                 "DEFAULT_VAULT_IDENTITY_LIST"    "ANSIBLE_VAULT_IDENTITY_LIST"
+                                                 "DEFAULT_VAULT_IDENTITY"         "ANSIBLE_VAULT_IDENTITY"
+                                                 "DEFAULT_VAULT_ENCRYPT_IDENTITY" "ANSIBLE_VAULT_ENCRYPT_IDENTITY"
+                                                 "DEFAULT_VAULT_ID_MATCH"         "ANSIBLE_VAULT_ID_MATCH")
+                    (shell-command-on-region (point-min) (point-max)
+                                             command
+                                             cmd-buf-stdout nil
+                                             cmd-buf-stderr nil))
+                  ))
+            (0 (with-current-buffer cmd-buf-stdout `(ok . ,(buffer-string))))
+            (_ (with-current-buffer cmd-buf-stderr `(error . ,(buffer-string)))))
+        (kill-buffer cmd-buf-stdout)
+        (kill-buffer cmd-buf-stderr)
+        ))))
+
+(defalias 'ansible-vault--decrypt (apply-partially #'ansible-vault--run 'decrypt)
+  "(ansible-vault--decrypt EVO EHDR STR)
+Alias to (ansible-vault--run 'decrypt AVO EHDR STR).")
+
+(defalias 'ansible-vault--encrypt (apply-partially #'ansible-vault--run 'encrypt)
+  "(ansible-vault--encrypt EVO EHDR STR)
+Alias to (ansible-vault--run 'encrypt AVO EHDR STR).")
+
+;; ──────────────────────────────────────────────────────────────
 ;; Data Structures
 ;; ──────────────────────────────────────────────────────────────
 
 ;; ehdr: Encryption Header
 
 (defconst ansible-vault--ehdr-regex
-  (rx line-start "$ANSIBLE_VAULT;"
-      (group-n 1 "1." (any "12")) ";"
-      (group-n 2 "AES" (optional "256"))
-      (optional ";" (group-n 3 (+ any)))
-      line-end)
+  (rx line-start
+      (group-n 1 (* space))
+        "$ANSIBLE_VAULT;"
+      (group-n 2 "1." (any "12")) ";"
+      (group-n 3 "AES" (optional "256"))
+      (optional ";" (group-n 4 (+ (not space)))))
   "Regex to find and parse Encryption Header.")
 
 (defconst ansible-vault--ehdr-regex-groups
-  (a-list :version 1
-          :cipher-algorithm 2
-          :vault-id 3))
+  (a-list :indent 1
+          :version 2
+          :cipher-algorithm 3
+          :vault-id 4))
 
 (cl-defstruct ansible-vault--ehdr
   "Encryption Header (ehdr)."
@@ -299,6 +483,8 @@ to find any ansible.cfg file to use.")
      ;; default w/o arguments is a fallback to alist
      (t (make-vault-id-alist :alist plist)))))
 
+
+
 ;; avo: Ansible-Vault Options
 
 (cl-defstruct ansible-vault--avo
@@ -348,195 +534,281 @@ to find any ansible.cfg file to use.")
       (unless valid-sources (error "No ansible.cfg found"))
       (cl-first valid-sources))))
 
-;; eblk: Encrypted Blocks
 
-(cl-defstruct ansible-vault--eblk
-  "Encrypted Blocks (eblk)."
-  overlay ehdr last-saved-content)
+;; BUFFER
 
-(defun ansible-vault--eblk-overlay-content (eblk)
-  "Return all text hidden by eblk overlay."
-  (ansible-vault--with-local-aliases
-    (let ((ov (eblk-overlay eblk)))
-      (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))))
-
-(defun ansible-vault--eblk-enc-content (eblk)
-  "Return ansible-vault encrypted text hidden by eblk overlay."
-  (ansible-vault--with-local-aliases
-    (when-let* ((ovc (eblk-overlay-content eblk))
-                (_ (string-match eblk-regex ovc))
-                (indent (match-string 1 ovc))
-                (ec-orig (match-string 2 ovc))
-                (ec (replace-regexp-in-string (rx line-start (literal indent)) "" ec-orig)))
-      ec)))
-
-(defface ansible-vault--eblk-content-face
-  '((t :background "dark slate grey"))
-  "Decrypted and clean."
-  :group 'ansible-vault)
-
-(defface ansible-vault--eblk-header-face
-  '((t :background "red4"))
-  "Decrypted and clean."
-  :group 'ansible-vault)
-
-(defun ansible-vault--make-eblk (&rest plist)
-  "Constructor eblk."
-  (ansible-vault--with-local-aliases
-    (cond
-     ((and (plist-member plist :start)
-           (plist-member plist :end))
-      (let ((eblk (make-eblk-orig :overlay (make-overlay (copy-marker (plist-get plist :start))
-                                                         (copy-marker (plist-get plist :end))))))
-        (overlay-put (eblk-overlay eblk) 'face 'ansible-vault--eblk-content-face)
-        (overlay-put (eblk-overlay eblk) 'before-string
-             (propertize "ansible-vault encrypted block\n" 'face 'ansible-vault--eblk-header-face))
-        (when-let ((enc-content (eblk-enc-content eblk)))
-          (setf (eblk-ehdr eblk)
-                (make-ehdr :parse-string (first-line enc-content))))
-        eblk))
-     (t (apply #'make-eblk-orig plist)))))
-
-(defconst ansible-vault--eblk-regex
-  (rx
-   "!vault" (+ space) "|" (or "\n" "\r\n")
-   (group (* space))
-   (group (+ nonl) (or "\n" "\r\n")
-          (* (seq (backref 1) (+ nonl) (or "\n" "\r\n")))
-          (backref 1) (+ nonl)))
-  "Return regex to match entire !vault | block with consistent indent.")
-
-(defun ansible-vault--eblk-find-all-in-buffer ()
-  "Find all eblk's."
+(defun ansible-vault--buffer-encrypted-p (&optional buffer)
+  "Return t if first line of buffer BUFFER matches `ansible-vault--ehdr-regex'.
+BUFFER can be a buffer or buffer name.  If nil or omitted, use current buffer."
   (ansible-vault--with-local-aliases
     (save-excursion
-      (widen)
       (goto-char (point-min))
-      (let ((eblks '()))
-        (while (re-search-forward eblk-regex nil t)
-          (when-let* ((start (match-beginning 0))
-                      (end (match-end 0)))
-            ;;(push (list start end) eblks) ; for debug purposes
-            (push (make-eblk :start start :end end) eblks)))
-        (nreverse eblks)))))
+      (let ((buffer-first-line (string-trim-right (or (thing-at-point 'line t) ""))))
+        (and (string-match ehdr-regex buffer-first-line t))))))
 
-(defun ansible-vault--eblk-decrypt (eblk avo)
-  "Decrypt eblk."
+(defun ansible-vault--buffer-decrypt (&optional avo ehdr)
+  "Decrypt current buffer."
   (ansible-vault--with-local-aliases
-    (let* ((ov (eblk-overlay eblk))
-           (ehdr (eblk-ehdr eblk))
-           (enc-content (eblk-enc-content eblk))
-           (content (av-decrypt avo ehdr enc-content)))
-      (progn
-        (overlay-put ov 'display content)
-        (setf (eblk-last-saved-content eblk) content)
-        (overlay-put ov 'face nil)
-        (overlay-put ov 'modified nil)))))
+    (pcase (list (or avo (state-avo av-state))
+                 (or ehdr (overlay-get (state-buffer-overlay av-state) 'ehdr)))
+      ((and `(,avo ,ehdr)
+            (guard (avo-p avo))
+            (guard (ehdr-p ehdr)))
+       (let ((enc-content (whole-buffer-string)))
+         (erase-buffer)
+         (prog1 (pcase (av-decrypt avo ehdr enc-content)
+                  (`(ok . ,str)     (insert str)
+                                    `(ok . ,enc-content))
+                  (`(error . ,err)  (insert err)
+                                    `(error . err)))
+           (set-buffer-modified-p nil))))
+      (_ `(error . "ansible-vault buffer-decrypt: bogus AVO or EHDR.")))))
 
+(defun ansible-vault--whole-buffer-string ()
+  "Return whole buffer as string.
+Like `buffer-string' but ignores narrowing."
+  (save-restriction
+    (widen)
+    (buffer-string)))
+
+;; OVERLAY
+
+;; any overlay must contain enc-content, ehdr
+
+;; ansible-vault--overlay-refresh-header ;; -> to refresh header
+;; ansible-vault--overlay--init
+
+;;(defun ansible-vault--overlay-refresh-buffer-header ()
   
 
-;; ──────────────────────────────────────────────────────────────
-;; Misc
-;; ──────────────────────────────────────────────────────────────
 
-(defun ansible-vault--get-or-create-error-buffer ()
-  "Generate or return `ansible-vault' error report buffer."
-  (or (get-buffer "*ansible-vault-error*")
-      (let ((buffer (get-buffer-create "*ansible-vault-error*")))
-        (with-current-buffer buffer)
-          (setq-local buffer-read-only t)
-        buffer)))
 
-;; ──────────────────────────────────────────────────────────────
-;; Shell
-;; ──────────────────────────────────────────────────────────────
 
-(defun ansible-vault--gen-shell-command (action avo ehdr)
+;; STATE
+
+;;(pcase (cons 'ok2 "xxx")
+;;  (`(ok1 . ,_) "yay")
+;;  (`(ok2 . ,x) x)
+;;  (x x))
+
+(cl-defstruct ansible-vault--state
+  "Ansible-vault-mode internal state structure."
+  avo
+  overlays
+  buffer-overlay)
+
+(defun ansible-vault--make-state (&rest plist)
   (ansible-vault--with-local-aliases
-    (let ((command (list ansible-vault-command)))
-      (cl-flet ((cpush (elt) (push elt command)))
-      (pcase action
-        (:decrypt
-         (cpush "decrypt")
-         (cpush "--output=-")
-         (pcase (ehdr-vault-type ehdr)
-           ('password-file (pcase (avo-password-file avo)
-                             (`nil (error "Unknown vault-password-file"))
-                             (val  (cpush "--vault-password-file")
-                                   (cpush val))))
-           ('vault-id      (pcase (avo-vault-id-alist avo)
-                             (`nil (error "Unknown vault-identity-list"))
-                             (vidl (cl-loop for (id . file) in vidl
-                                            do (progn (cpush "--vault-id")
-                                                      (cpush (concat id "@" file)))))))
-           (ver            (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
-        (:encrypt
-         (cpush "encrypt")
-         (cpush "--output=-")
-         (pcase (ehdr-vault-type ehdr)
-           ('password-file (pcase (avo-password-file avo)
-                             (`nil (error "Unknown vault-password-file"))
-                             (val  (cpush "--vault-password-file")
-                                   (cpush val))))
-           ('vault-id      (let ((enc-id (or (ehdr-vault-id ehdr)
-                                             (avo-default-enc-vault-id avo))))
-                             (unless enc-id
-                               (error "Undefined vault-encrypt-identity"))
-                             (cpush "--encrypt-vault-id")
-                             (cpush enc-id)
-                             (pcase (avo-vault-id-alist avo)
-                               (`nil (error "Unknown vault-identity-list"))
-                               (vidl (cl-loop for (id . file) in vidl
-                                              when (equal id enc-id)
-                                              do (progn (cpush "--vault-id")
-                                                        (cpush (concat id "@" file))))))))
-           (ver (error (format "Unknown ansible-vault crypto-header version: %s" ver)))))
-        (_ (error (format "Unknown action: %s" action))))
-      (mapconcat #'identity (reverse command) " ")))))
+    (cond
+     ((plist-member plist :by-current-buffer)
+      ;; create state
+      (let ((state (make-state-orig)))
+        (prog1 state
+          ;; set avo in any case
+          (setf (state-avo state)
+                (make-avo :by-current-buffer))
+          ;; if buffer's encrypted, first decrypt it, then make overlay
+          ;; save enc-content and ehdr in overlay properties
+          (pcase (buffer-encrypted-p)
+            (`t (let ((enc-content (whole-buffer-string))
+                      (ehdr (make-ehdr :parse-string (first-line enc-content)))
+                      (decryption-result (buffer-decrypt (state-avo state) ehdr))
+                      (ov (make-overlay (copy-marker (point-min))
+                                        (copy-marker (point-max)))))
+                  (setf (state-buffer-overlay state) ov)
+                  (overlay-put ov 'enc-content enc-content)
+                  (overlay-put ov 'ehdr ehdr)
+                  (pcase 
+                    (`(ok . ,_)
+                     ;; TODO: find and set inline overlays
+                     nil
+                     )
+                    (`(error . ,err)
+                     ;; in case of decryption error, make buffer overlay readonly
+                     (overlay-put ov 'invisible t)
+                     (overlay-put ov 'display (whole-buffer-string))
+                     ))))
+            (`nil
+             ;; if buffer's unencrypted, just make an overlay
+             (let ((ov (make-overlay (copy-marker (point-min))
+                                     (copy-marker (point-max)))))
+               (setf (state-buffer-overlay state) ov))
+             ;; TODO: find and set inline overlays
+             ))))))))
+               
+                
+                     
 
-;; TODO: probably it'll be sane to return some structure indicating status: okay or error
-;; it would be useful to indicate errors while decrypting/encrypting eblks
-(defun ansible-vault--run (action avo ehdr str)
-  ""
-  (ansible-vault--with-local-aliases
-    (let ((command (gen-shell-command action avo ehdr))
-          (cmd-buf-stdout (generate-new-buffer "ansible-vault-cmd-stdout"))
-          (cmd-buf-stderr (generate-new-buffer "ansible-vault-cmd-stderr"))
-          (env-ansible-vault-password-file (getenv "ANSIBLE_VAULT_PASSWORD_FILE")))
-      (unless (f-directory-p ansible-vault--tempdir)
-        (make-directory ansible-vault--tempdir))
-      (unwind-protect
-          (pcase (unwind-protect
-                     (progn
-                       (when env-ansible-vault-password-file
-                         (setenv "ANSIBLE_VAULT_PASSWORD_FILE" nil))
-                       (with-temp-buffer
-                         (insert str)
-                         (let ((inhibit-message t) ; disable output to *Messages* from elisp `message' function
-                               (message-log-max nil) ; disable output to *Messages* from c-code
-                               (default-directory ansible-vault--tempdir))
-                           (shell-command-on-region (point-min) (point-max)
-                                                    command
-                                                    cmd-buf-stdout nil
-                                                    cmd-buf-stderr nil)
-                           )))
-                   (when env-ansible-vault-password-file
-                     (setenv "ANSIBLE_VAULT_PASSWORD_FILE" env-ansible-vault-password-file)))
-            (0 (with-current-buffer cmd-buf-stdout
-                 (buffer-string)))
-            (_ (progn
-                 (switch-to-buffer (ansible-vault--get-or-create-error-buffer))
-                 (goto-char (point-max))
-                 (insert "$ " command "\n")
-                 (insert-buffer-substring cmd-buf-stderr)
-                 (insert "\n"))))
-        (kill-buffer cmd-buf-stdout)
-        (kill-buffer cmd-buf-stderr)
-        ))))
+                    
+                    
+              
+                        
+        
+        
+      
 
-(defalias 'ansible-vault--decrypt (apply-partially #'ansible-vault--run :decrypt))
-(defalias 'ansible-vault--encrypt (apply-partially #'ansible-vault--run :encrypt))
 
+
+
+
+
+
+
+
+
+
+
+
+;;(cl-defstruct ansible-vault--bufstate
+;;  "Ansible-vault buffer state."
+;;  encrypted
+;;  enc-content
+;;  ehdr
+;;  overlay)
+;;
+;;(defun ansible-vault--make-bufstate (&rest plist)
+;;  (ansible-vault--with-local-aliases
+;;    (cond
+;;     ((and (plist-member plist :encrypted)
+;;           (plist-get plist :encrypted))
+;;      (let ((buffer-string (buffer-string)))
+;;        (make-bufstate-orig :encrypted t
+;;                            :enc-content buffer-string
+;;                            :ehdr (make-ehdr :parse-string
+;;                                             (first-line buffer-string)))))
+;;     ((plist-member plist :by-current-buffer)
+;;      (make-bufstate :encrypted (and (string-match ehdr-regex (first-line (buffer-string))) t)))
+;;     (t (apply #'make-bufstate-orig plist)))))
+;;
+;;
+;;(defun ansible-vault--make-state (&rest plsit)
+;;  (ansible-vault--with-local-aliases
+;;    (cond
+;;
+;;  
+;;
+;;
+;;;;;; NB: the concept of encrypted blocks as a top-level objects fails
+;;;;;; decided to switch to create overlays, and set encrypted blocks as their properties
+;;;; eblk: Encrypted Blocks
+;;
+;;
+;;
+;;(defconst ansible-vault--eblk-regex
+;;  (rx
+;;   "!vault" (+ space) "|" (group-n 1 "\n")
+;;   (group-n 2 (* space))
+;;   (group-n 3
+;;     "$ANSIBLE_VAULT;1." (any "12") ";" "AES" (optional "256") (optional ";" (+ (not space))) "\n"
+;;     (* (seq (backref 1) (+ nonl) "\n"))
+;;     (backref 1) (+ nonl)))
+;;  "Return regex to match entire ansible-vault in-line encrypted block with indent.")
+;;
+;;(defconst ansible-vault--eblk-regex-groups
+;;  (a-list :indent 2 :content 3))
+;;
+;;(cl-defstruct ansible-vault--eblk
+;;  "Encrypted Blocks (eblk)."
+;;  overlay
+;;  ehdr
+;;  last-saved-encrypted-content
+;;  is-modified
+;;  is-miltiline)
+;;
+;;(defun ansible-vault--make-eblk (&rest plist)
+;;  "Constructor eblk."
+;;  (ansible-vault--with-local-aliases
+;;    (cond
+;;     ((and (plist-member plist :start)
+;;           (plist-member plist :end))
+;;      (let ((eblk (make-eblk-orig :overlay (make-overlay (copy-marker (plist-get plist :start))
+;;                                                         (copy-marker (plist-get plist :end))))))
+;;        (overlay-put (eblk-overlay eblk) 'face 'ansible-vault--eblk-content-face)
+;;        eblk))
+;;     (t (apply #'make-eblk-orig plist)))))
+;;
+;;(defun ansible-vault--eblk-refresh-overlay-header (eblk)
+;;  "Generate and set a header to an ansible-vault encrypted block EBLK."
+;;  (ansible-vault--with-local-aliases
+;;    (let* ((terminator (if eblk-is-multiline "\n" ": "))
+;;           (before-string
+;;            (pcase (eblk-ehdr eblk)
+;;              (`nil (concat ansible-vault-mode-eblk-header-text terminator))
+;;              (ehdr (let ((type (symbol-name (ehdr-vault-type ehdr)))
+;;                          (vid (ehdr-vault-id ehdr)))
+;;                      (setq before-string
+;;                            (concat ansible-vault-mode-eblk-header-text
+;;                                    " (" type (if vid (concat ", " vid) "") ")" terminator))))))
+;;           (before-string-with-props
+;;            (propertize before-string 'face 'ansible-vault--eblk-header-face)))
+;;      (overlay-put (eblk-overlay eblk)
+;;                   'before-string before-string-with-props))))
+;;
+;;(defun ansible-vault--eblk-get-overlay-content (eblk)
+;;  "Return all text hidden by eblk overlay."
+;;  (ansible-vault--with-local-aliases
+;;    (let ((ov (eblk-overlay eblk)))
+;;      (buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))))
+;;
+;;
+;;
+;;
+;;
+;;;; (when-let ((enc-content (eblk-enc-content eblk)))
+;;;;   (setf (eblk-ehdr eblk)
+;;;;         (make-ehdr :parse-string (first-line enc-content))))
+;;;; (eblk-refresh-overlay-header eblk)
+;;
+;;
+;;
+;;
+;;
+;;
+;;
+;;
+;;
+;;
+;;
+;;(defun ansible-vault--eblk-enc-content (eblk)
+;;  "Return ansible-vault encrypted text hidden by eblk overlay."
+;;  (ansible-vault--with-local-aliases
+;;    (when-let* ((ovc (eblk-overlay-content eblk))
+;;                (_ (string-match eblk-regex ovc))
+;;                (indent (match-string 1 ovc))
+;;                (ec-orig (match-string 2 ovc))
+;;                (ec (replace-regexp-in-string (rx line-start (literal indent)) "" ec-orig)))
+;;      ec)))
+;;
+;;
+;;
+;;(defun ansible-vault--eblk-find-all-in-buffer ()
+;;  "Find all eblk's."
+;;  (ansible-vault--with-local-aliases
+;;    (save-excursion
+;;      (widen)
+;;      (goto-char (point-min))
+;;      (let ((eblks '()))
+;;        (while (re-search-forward eblk-regex nil t)
+;;          (when-let* ((start (match-beginning 0))
+;;                      (end (match-end 0)))
+;;            ;;(push (list start end) eblks) ; for debug purposes
+;;            (push (make-eblk :start start :end end) eblks)))
+;;        (nreverse eblks)))))
+;;
+;;(defun ansible-vault--eblk-decrypt (eblk avo)
+;;  "Decrypt eblk."
+;;  (ansible-vault--with-local-aliases
+;;    (let* ((ov (eblk-overlay eblk))
+;;           (ehdr (eblk-ehdr eblk))
+;;           (enc-content (eblk-enc-content eblk))
+;;           (content (av-decrypt avo ehdr enc-content)))
+;;      (progn
+;;        (overlay-put ov 'display content)
+;;        (setf (eblk-last-saved-content eblk) content)
+;;        (overlay-put ov 'face nil)
+;;        (overlay-put ov 'modified nil)))))
+;;
+;;
 
 
 
