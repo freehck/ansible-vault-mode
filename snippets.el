@@ -58,6 +58,14 @@
 
 ;; TODO: inhibit undo actions by undo-copy-list buffer-undo-list and futher restoration
 
+;; IMPORTANT:
+;; define my own save-buffer function, bind LOCALLY to C-x C-s (and s-s for system-type darwin)
+;; call save-buffer inside save-mark-and-excursion
+;; so no need to hack with before-state-hook and after-save-hook
+;; so no need to play around with undo
+;; so no need to restore overlay markers
+;; PURE PROFIT
+
 ;; TODO: add rekey functionality
 
 ;; TODO: add a graphical header for encrypted region (or file)

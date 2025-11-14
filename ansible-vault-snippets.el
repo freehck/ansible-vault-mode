@@ -195,7 +195,7 @@ Its value is OBJ where (`ansible-vault--state-p' OBJ) evaluates to t.")
     str))
 
 ;; ──────────────────────────────────────────────────────────────
-;; Local Namespacing Hack
+;; Macro: Local Namespacing Hack
 ;; ──────────────────────────────────────────────────────────────
 
 ;; plus maybe eval-when-compile
