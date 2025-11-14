@@ -166,6 +166,19 @@
           (should (equal (decrypt (buffer-string))                     '(ok . "user@password\n")))
           (should (equal (decrypt (encrypt (decrypt (buffer-string)))) '(ok . "user@password\n"))))))))
 
+(ert-deftest mode:run:password-file ()
+  (ansible-vault--with-local-aliases
+    (with-temp-buffer
+      ;; emulate file open procedure w/o enabling any modes
+      (setq buffer-file-name (f-full "snippets/encrypted-1.1"))
+      (insert-file-contents "snippets/encrypted-1.1")
+      (set-buffer-modified-p nil)
+      ;; test
+      (ansible-vault-mode-enable)
+      (should (equal (buffer-string) "user@password\n"))))
+  )
+
+
 ;;(ert-deftest structure:eblk:decrypt ()
 ;;  (ansible-vault--with-local-aliases
 ;;    (with-temp-buffer

@@ -129,6 +129,21 @@ function instead."
   :type 'string
   :group 'ansible-vault)
 
+(defcustom ansible-vault-buffer-overlay-header-text "Ansible-Vault Encripted File"
+  "Text of an ansible-vault in-line encrypted block overlay header."
+  :type 'string
+  :group 'ansible-vault)
+
+(defcustom ansible-vault-buffer-overlay-header-text-prefix "##### "
+  "Text of an ansible-vault in-line encrypted block overlay header prefix."
+  :type 'string
+  :group 'ansible-vault)
+
+(defcustom ansible-vault-buffer-overlay-header-text-suffix " #####"
+  "Text of an ansible-vault in-line encrypted block overlay header suffix."
+  :type 'string
+  :group 'ansible-vault)
+
 ;; ──────────────────────────────────────────────────────────────
 ;; Internal variables
 ;; ──────────────────────────────────────────────────────────────
@@ -220,6 +235,8 @@ Its value is OBJ where (`ansible-vault--state-p' OBJ) evaluates to t.")
     (buffer-encrypted-p . ansible-vault--buffer-encrypted-p)
     (buffer-decrypt . ansible-vault--buffer-decrypt)
     (whole-buffer-string . ansible-vault--whole-buffer-string)
+    ;; buffer-overlay
+    (buffer-overlay-refresh-header . ansible-vault--buffer-overlay-refresh-header)
     ;; state
     (make-state-orig . make-ansible-vault--state)
     (make-state . ansible-vault--make-state)
@@ -227,6 +244,7 @@ Its value is OBJ where (`ansible-vault--state-p' OBJ) evaluates to t.")
     (state-overlays . ansible-vault--state-overlays)
     (state-buffer-overlay . ansible-vault--state-buffer-overlay)
     (state-p . ansible-vault--state-p)
+    (av-state . ansible-vault--state)
 ;;    ;; eblk
 ;;    (eblk-regex . ansible-vault--eblk-regex)
 ;;    (eblk-find-all-in-buffer . ansible-vault--eblk-find-all-in-buffer)
@@ -544,7 +562,7 @@ BUFFER can be a buffer or buffer name.  If nil or omitted, use current buffer."
     (save-excursion
       (goto-char (point-min))
       (let ((buffer-first-line (string-trim-right (or (thing-at-point 'line t) ""))))
-        (and (string-match ehdr-regex buffer-first-line t))))))
+        (and (string-match ehdr-regex buffer-first-line) t)))))
 
 (defun ansible-vault--buffer-decrypt (&optional avo ehdr)
   "Decrypt current buffer."
@@ -555,12 +573,11 @@ BUFFER can be a buffer or buffer name.  If nil or omitted, use current buffer."
             (guard (avo-p avo))
             (guard (ehdr-p ehdr)))
        (let ((enc-content (whole-buffer-string)))
-         (erase-buffer)
          (prog1 (pcase (av-decrypt avo ehdr enc-content)
-                  (`(ok . ,str)     (insert str)
-                                    `(ok . ,enc-content))
-                  (`(error . ,err)  (insert err)
-                                    `(error . err)))
+                  (`(ok . ,str)     (erase-buffer)
+                                    (insert str)
+                                    `(ok))
+                  (`(error . ,err)  `(error . err)))
            (set-buffer-modified-p nil))))
       (_ `(error . "ansible-vault buffer-decrypt: bogus AVO or EHDR.")))))
 
@@ -571,7 +588,31 @@ Like `buffer-string' but ignores narrowing."
     (widen)
     (buffer-string)))
 
-;; OVERLAY
+;; BUFFER OVERLAY
+
+(defun ansible-vault--buffer-overlay-refresh-header (&optional ov)
+  (ansible-vault--with-local-aliases
+    (pcase (or ov (state-buffer-overlay av-state))
+      (`nil `(error . "ansible-vault--buffer-overlay-refresh-header: buffer-overlay not found"))
+      (ov (let* ((ehdr (overlay-get ov 'ehdr))
+                 (vtype (symbol-name (ehdr-vault-type ehdr)))
+                 (vid (ehdr-vault-id ehdr))
+                 (before-string
+                  (concat ansible-vault-buffer-overlay-header-text-prefix
+                          ansible-vault-buffer-overlay-header-text
+                          " (" vtype (if vid (concat ", " vid) "") ")"
+                          ansible-vault-buffer-overlay-header-text-suffix
+                          "\n"))
+                 (before-string-with-props
+                  (propertize before-string 'face 'ansible-vault--buffer-header-face)))
+            (overlay-put ov 'before-string before-string-with-props)
+            '(ok))))))
+
+(defun ansible-vault--buffer-overlay-content (&optional ov)
+  (ansible-vault--with-local-aliases
+    (pcase (or ov (state-buffer-overlay av-state))
+      (`nil `(error . "ansible-vault--buffer-overlay-refresh-header: buffer-overlay not found"))
+      (ov (`ok . ,(buffer-substring-no-properties (overlay-start ov) (overlay-end ov)))))))
 
 ;; any overlay must contain enc-content, ehdr
 
@@ -599,53 +640,61 @@ Like `buffer-string' but ignores narrowing."
 
 (defun ansible-vault--make-state (&rest plist)
   (ansible-vault--with-local-aliases
-    (cond
-     ((plist-member plist :by-current-buffer)
-      ;; create state
-      (let ((state (make-state-orig)))
-        (prog1 state
-          ;; set avo in any case
-          (setf (state-avo state)
-                (make-avo :by-current-buffer))
-          ;; if buffer's encrypted, first decrypt it, then make overlay
-          ;; save enc-content and ehdr in overlay properties
-          (pcase (buffer-encrypted-p)
-            (`t (let ((enc-content (whole-buffer-string))
-                      (ehdr (make-ehdr :parse-string (first-line enc-content)))
-                      (decryption-result (buffer-decrypt (state-avo state) ehdr))
-                      (ov (make-overlay (copy-marker (point-min))
-                                        (copy-marker (point-max)))))
-                  (setf (state-buffer-overlay state) ov)
-                  (overlay-put ov 'enc-content enc-content)
-                  (overlay-put ov 'ehdr ehdr)
-                  (pcase 
-                    (`(ok . ,_)
-                     ;; TODO: find and set inline overlays
-                     nil
-                     )
-                    (`(error . ,err)
-                     ;; in case of decryption error, make buffer overlay readonly
-                     (overlay-put ov 'invisible t)
-                     (overlay-put ov 'display (whole-buffer-string))
-                     ))))
-            (`nil
-             ;; if buffer's unencrypted, just make an overlay
-             (let ((ov (make-overlay (copy-marker (point-min))
-                                     (copy-marker (point-max)))))
-               (setf (state-buffer-overlay state) ov))
-             ;; TODO: find and set inline overlays
-             ))))))))
-               
-                
-                     
+    (apply #'make-state-orig plist)))
 
-                    
-                    
-              
-                        
-        
-        
-      
+;; ──────────────────────────────────────────────────────────────
+;; Mode
+;; ──────────────────────────────────────────────────────────────
+
+;;;###autoload
+(defun ansible-vault-mode-enable ()
+  "Enable `ansible-vault-mode'"
+  (interactive)
+  (ansible-vault--with-local-aliases
+    ;; disable backups and auto-save
+    (setq-local backup-inhibited t)
+    (when auto-save-default (auto-save-mode -1)) ;; btw why?
+    ;; ensure state exists
+    (unless av-state
+      ;; create avo in any case
+      (let ((avo (make-avo :by-current-buffer)))
+        ;; initialize state for encrypted and unencrypted buffers
+        (pcase (buffer-encrypted-p)
+          ;; encrtypted buffer
+          (`t (let* ((enc-content (whole-buffer-string))
+                     (ehdr (make-ehdr :parse-string (first-line enc-content))))
+                (pcase (buffer-decrypt avo ehdr)
+                  ;; if decryption is successful, create overlay and set its properties
+                  (`(ok)
+                   (let ((buf-ov (make-overlay (copy-marker (point-min))
+                                               (copy-marker (point-max)))))
+                     (overlay-put buf-ov 'enc-content enc-content)
+                     (overlay-put buf-ov 'ehdr ehdr)
+                     (overlay-put buf-ov 'multiline t)
+                     ;; TODO: find and set inline overlays
+                     (setq av-state (make-state :avo avo
+                                                :buffer-overlay buf-ov))))
+                  ;; if decryption is unseccessful, create overlay anyway, but hide original content
+                  ;; and display the error instead of decrypted text
+                  (`(error . ,err)
+                   (let ((buf-ov (make-overlay (copy-marker (point-min))
+                                               (copy-marker (point-max)))))
+                     (overlay-put ov 'invisible t)
+                     (overlay-put ov 'display err)
+                     (setq av-state (make-state :avo avo
+                                                :buffer-overlay buf-ov))
+                     )))))
+          ;; unencrypted buffer
+          (`nil (let ((buf-ov (make-overlay (copy-marker (point-min))
+                                            (copy-marker (point-max))))))
+                ;; TODO: find and set inline oevrlayes
+                (setq av-state (make-state :avo avo
+                                           :buffer-overlay buf-ov))))))
+    ;; refresh buffer-overlay
+    (buffer-overlay-refresh-header)))
+
+
+
 
 
 

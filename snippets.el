@@ -56,6 +56,8 @@
 
 ;; TODO: add inline ansible-vault snippets support (markers + overlays)
 
+;; TODO: inhibit undo actions by undo-copy-list buffer-undo-list and futher restoration
+
 ;; TODO: add rekey functionality
 
 ;; TODO: add a graphical header for encrypted region (or file)
