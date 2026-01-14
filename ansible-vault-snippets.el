@@ -697,14 +697,31 @@ Like `buffer-string' but ignores narrowing."
 
 
 
+;;;; MEGA IDEA / START
 
+;;;; draft save function
+;;(defun ansible-vault--save-buffer ()
+;;  "Save encrypted content, keep plaintext in buffer."
+;;  (interactive)
+;;  (when (ansible-vault--buffer-encrypted-p)
+;;    (save-mark-and-excursion
+;;      (let ((plaintext (buffer-string)))
+;;        (erase-buffer)
+;;        (insert (ansible-vault--encrypt plaintext))
+;;        (save-buffer)
+;;        (erase-buffer)
+;;        (insert plaintext)
+;;        (set-buffer-modified-p nil)))))
 
+;;(where-is-internal 'save-buffer) ;; => ([8388723] [24 19] [menu-bar file save-buffer])
 
+;;(defun ansible-vault--intercept-save-buffer ()
+;;  (when (ansible-vault--buffer-encrypted-p)
+;;    (dolist (key (where-is-internal 'save-buffer))
+;;      (when (vectorp key)
+;;        (local-set-key key #'ansible-vault--save)))))
 
-
-
-
-
+;;;; MEGA IDEA / END
 
 
 
